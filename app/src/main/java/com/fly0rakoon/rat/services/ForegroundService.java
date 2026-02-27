@@ -60,13 +60,28 @@ public class ForegroundService extends Service {
         // Start as foreground service
         startAsForeground();
         
-        // Initialize connection manager
-        connectionManager = new ConnectionManager(this);
+        // FIXED: Initialize connection manager with no-arg constructor
+        connectionManager = new ConnectionManager();
+        
+        // Manually trigger onCreate to set context and initialize modules
+        // This simulates the Android Service lifecycle for ConnectionManager
+        try {
+            Log.d(TAG, "Initializing ConnectionManager...");
+            connectionManager.onCreate();
+            Log.d(TAG, "ConnectionManager initialized successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing ConnectionManager: " + e.getMessage());
+        }
         
         // Start connection in background
         backgroundHandler.post(() -> {
-            connectionManager.start();
-            isRunning = true;
+            if (connectionManager != null) {
+                connectionManager.start();
+                isRunning = true;
+                Log.d(TAG, "ConnectionManager started");
+            } else {
+                Log.e(TAG, "Cannot start - connectionManager is null");
+            }
         });
         
         // Schedule heartbeat to keep service alive
@@ -137,13 +152,21 @@ public class ForegroundService extends Service {
                 if (isRunning) {
                     // Send heartbeat to keep connection alive
                     if (connectionManager != null) {
-                        connectionManager.sendHeartbeat();
+                        try {
+                            connectionManager.sendHeartbeat();
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error sending heartbeat: " + e.getMessage());
+                        }
                     }
                     
                     // Check if connection is still alive
                     if (connectionManager != null && !connectionManager.isConnected()) {
                         Log.d(TAG, "Connection lost, reconnecting...");
-                        connectionManager.reconnect();
+                        try {
+                            connectionManager.reconnect();
+                        } catch (Exception e) {
+                            Log.e(TAG, "Error reconnecting: " + e.getMessage());
+                        }
                     }
                     
                     // Schedule next heartbeat
@@ -168,13 +191,19 @@ public class ForegroundService extends Service {
         
         // Stop connection manager
         if (connectionManager != null) {
-            connectionManager.stop();
+            try {
+                connectionManager.stop();
+                Log.d(TAG, "ConnectionManager stopped");
+            } catch (Exception e) {
+                Log.e(TAG, "Error stopping ConnectionManager: " + e.getMessage());
+            }
             connectionManager = null;
         }
         
         // Release wake lock
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
+            Log.d(TAG, "Wake lock released");
         }
         
         // Quit handler thread
@@ -184,15 +213,16 @@ public class ForegroundService extends Service {
             } else {
                 handlerThread.quit();
             }
+            Log.d(TAG, "Handler thread quit");
         }
         
-        // Restart service if it was destroyed
-        Intent restartIntent = new Intent(this, ForegroundService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(restartIntent);
-        } else {
-            startService(restartIntent);
-        }
+        // Restart service if it was destroyed (optional - remove if you don't want auto-restart)
+        // Intent restartIntent = new Intent(this, ForegroundService.class);
+        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        //     startForegroundService(restartIntent);
+        // } else {
+        //     startService(restartIntent);
+        // }
         
         super.onDestroy();
     }
@@ -222,7 +252,13 @@ public class ForegroundService extends Service {
     // Method to manually reconnect
     public void reconnect() {
         if (connectionManager != null) {
-            backgroundHandler.post(() -> connectionManager.reconnect());
+            backgroundHandler.post(() -> {
+                try {
+                    connectionManager.reconnect();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error in reconnect: " + e.getMessage());
+                }
+            });
         }
     }
 }
