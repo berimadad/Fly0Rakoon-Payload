@@ -64,11 +64,17 @@ jobs:
         # Generate keystore for signing
         keytool -genkey -v -keystore release.keystore -alias ratkey -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
         
-        # Sign the APK
-        $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 app/build/outputs/apk/release/app-release-unsigned.apk
+        # First, align the APK (zipalign must be done BEFORE signing)
+        $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-aligned.apk
         
-        # Align and rename
-        $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
+        # Sign the APK with apksigner
+        $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --out app/build/outputs/apk/release/app-release-signed.apk app/build/outputs/apk/release/app-release-aligned.apk
+        
+        # Verify the signature
+        $ANDROID_HOME/build-tools/33.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release-signed.apk
+        
+        # Copy to final name with app_name and lhost
+        cp app/build/outputs/apk/release/app-release-signed.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
