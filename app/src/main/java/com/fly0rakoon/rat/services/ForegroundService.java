@@ -35,69 +35,83 @@ public class ForegroundService extends Service {
     private Handler backgroundHandler;
     private HandlerThread handlerThread;
     private boolean isRunning = false;
-    
+
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "Service creating...");
-        
-        // Create a dedicated handler thread for background tasks
-        handlerThread = new HandlerThread("ForegroundServiceThread");
-        handlerThread.start();
-        backgroundHandler = new Handler(handlerThread.getLooper());
-        
-        // Acquire wake lock to keep CPU running
-        PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "Fly0Rakoon::ForegroundServiceWakeLock"
-        );
-        wakeLock.acquire(10*60*1000L /*10 minutes*/);
-        
-        // Create notification channel for Android O+
-        createNotificationChannel();
-        
-        // Start as foreground service
-        startAsForeground();
-        
-        // FIXED: Initialize connection manager with no-arg constructor
-        connectionManager = new ConnectionManager();
-        
-        // Manually trigger onCreate to set context and initialize modules
-        // This simulates the Android Service lifecycle for ConnectionManager
+
         try {
-            Log.d(TAG, "Initializing ConnectionManager...");
-            connectionManager.onCreate();
-            Log.d(TAG, "ConnectionManager initialized successfully");
-        } catch (Exception e) {
-            Log.e(TAG, "Error initializing ConnectionManager: " + e.getMessage());
-        }
-        
-        // Start connection in background
-        backgroundHandler.post(() -> {
-            if (connectionManager != null) {
-                connectionManager.start();
-                isRunning = true;
-                Log.d(TAG, "ConnectionManager started");
-            } else {
-                Log.e(TAG, "Cannot start - connectionManager is null");
+            // Create a dedicated handler thread for background tasks
+            handlerThread = new HandlerThread("ForegroundServiceThread");
+            handlerThread.start();
+            backgroundHandler = new Handler(handlerThread.getLooper());
+
+            // Acquire wake lock to keep CPU running
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "Fly0Rakoon::ForegroundServiceWakeLock"
+                );
+                if (wakeLock != null) {
+                    wakeLock.acquire(10 * 60 * 1000L /*10 minutes*/);
+                }
             }
-        });
-        
-        // Schedule heartbeat to keep service alive
-        scheduleHeartbeat();
+
+            // Create notification channel for Android O+
+            createNotificationChannel();
+
+            // Start as foreground service
+            startAsForeground();
+
+            // Initialize connection manager with no-arg constructor
+            connectionManager = new ConnectionManager();
+
+            // Manually trigger onCreate to set context and initialize modules
+            try {
+                Log.d(TAG, "Initializing ConnectionManager...");
+                connectionManager.onCreate();
+                Log.d(TAG, "ConnectionManager initialized successfully");
+            } catch (Exception e) {
+                Log.e(TAG, "Error initializing ConnectionManager: " + e.getMessage());
+            }
+
+            // Start connection in background with a small delay
+            if (backgroundHandler != null && connectionManager != null) {
+                backgroundHandler.postDelayed(() -> {
+                    try {
+                        connectionManager.start();
+                        isRunning = true;
+                        Log.d(TAG, "ConnectionManager started");
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error starting ConnectionManager: " + e.getMessage());
+                    }
+                }, 2000); // 2 second delay to ensure everything is ready
+            }
+
+            // Schedule heartbeat to keep service alive
+            scheduleHeartbeat();
+            
+        } catch (Exception e) {
+            Log.e(TAG, "Error in onCreate: " + e.getMessage());
+        }
     }
     
     private void startAsForeground() {
-        // Create the notification
-        Notification notification = createNotification();
-        
-        // Start foreground service
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, 
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
+        try {
+            // Create the notification
+            Notification notification = createNotification();
+
+            // Start foreground service
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, 
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error starting as foreground: " + e.getMessage());
         }
     }
     
@@ -110,7 +124,7 @@ public class ForegroundService extends Service {
             notificationIntent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
-        
+
         // Build the notification
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("System Service")
@@ -120,32 +134,40 @@ public class ForegroundService extends Service {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setAutoCancel(false);
-        
+
         // For older Android versions, add a large icon if available
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setLargeIcon(BitmapFactory.decodeResource(getResources(), 
                 android.R.drawable.ic_dialog_info));
         }
-        
+
         return builder.build();
     }
     
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "Fly0Rakoon Service",
-                NotificationManager.IMPORTANCE_LOW
-            );
-            channel.setDescription("Background service channel");
-            channel.setShowBadge(false);
-            
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            manager.createNotificationChannel(channel);
+            try {
+                NotificationChannel channel = new NotificationChannel(
+                    CHANNEL_ID,
+                    "Fly0Rakoon Service",
+                    NotificationManager.IMPORTANCE_LOW
+                );
+                channel.setDescription("Background service channel");
+                channel.setShowBadge(false);
+
+                NotificationManager manager = getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.createNotificationChannel(channel);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error creating notification channel: " + e.getMessage());
+            }
         }
     }
     
     private void scheduleHeartbeat() {
+        if (backgroundHandler == null) return;
+        
         backgroundHandler.postDelayed(new Runnable() {
             @Override
             public void run() {
@@ -158,7 +180,7 @@ public class ForegroundService extends Service {
                             Log.e(TAG, "Error sending heartbeat: " + e.getMessage());
                         }
                     }
-                    
+
                     // Check if connection is still alive
                     if (connectionManager != null && !connectionManager.isConnected()) {
                         Log.d(TAG, "Connection lost, reconnecting...");
@@ -168,7 +190,7 @@ public class ForegroundService extends Service {
                             Log.e(TAG, "Error reconnecting: " + e.getMessage());
                         }
                     }
-                    
+
                     // Schedule next heartbeat
                     backgroundHandler.postDelayed(this, Constants.HEARTBEAT_INTERVAL);
                 }
@@ -188,7 +210,7 @@ public class ForegroundService extends Service {
     public void onDestroy() {
         Log.d(TAG, "Service destroying...");
         isRunning = false;
-        
+
         // Stop connection manager
         if (connectionManager != null) {
             try {
@@ -199,13 +221,13 @@ public class ForegroundService extends Service {
             }
             connectionManager = null;
         }
-        
+
         // Release wake lock
         if (wakeLock != null && wakeLock.isHeld()) {
             wakeLock.release();
             Log.d(TAG, "Wake lock released");
         }
-        
+
         // Quit handler thread
         if (handlerThread != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
@@ -215,15 +237,7 @@ public class ForegroundService extends Service {
             }
             Log.d(TAG, "Handler thread quit");
         }
-        
-        // Restart service if it was destroyed (optional - remove if you don't want auto-restart)
-        // Intent restartIntent = new Intent(this, ForegroundService.class);
-        // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        //     startForegroundService(restartIntent);
-        // } else {
-        //     startService(restartIntent);
-        // }
-        
+
         super.onDestroy();
     }
     
@@ -251,7 +265,7 @@ public class ForegroundService extends Service {
     
     // Method to manually reconnect
     public void reconnect() {
-        if (connectionManager != null) {
+        if (connectionManager != null && backgroundHandler != null) {
             backgroundHandler.post(() -> {
                 try {
                     connectionManager.reconnect();

