@@ -1,5 +1,6 @@
 package com.fly0rakoon.rat.utils;
 
+import android.os.PowerManager;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;

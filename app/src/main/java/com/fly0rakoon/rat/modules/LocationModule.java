@@ -104,45 +104,45 @@ public class LocationModule {
     }
     
     private Location getSingleLocation() throws SecurityException, InterruptedException {
-        final Object lock = new Object();
-        final Location[] locationResult = new Location[1];
-        
-        LocationListener locationListener = new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                synchronized (lock) {
-                    locationResult[0] = location;
-                    lock.notify();
-                }
+    final Object lock = new Object();
+    final Location[] locationResult = new Location[1];
+    
+    LocationListener locationListener = new LocationListener() {
+        @Override
+        public void onLocationChanged(Location location) {
+            synchronized (lock) {
+                locationResult[0] = location;
+                lock.notify();
             }
-            
-            @Override
-            public void onStatusChanged(String provider, int status, Bundle extras) {}
-            
-            @Override
-            public void onProviderEnabled(String provider) {}
-            
-            @Override
-            public void onProviderDisabled(String provider) {}
-        };
-        
-        // Request location updates
-        if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            locationManager.requestSingleLocation(LocationManager.GPS_PROVIDER, locationListener, Looper.getMainLooper());
-        } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-            locationManager.requestSingleLocation(LocationManager.NETWORK_PROVIDER, locationListener, Looper.getMainLooper());
         }
         
-        // Wait for location (max 10 seconds)
-        synchronized (lock) {
-            lock.wait(10000);
-        }
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {}
         
-        // Remove updates
-        locationManager.removeUpdates(locationListener);
+        @Override
+        public void onProviderEnabled(String provider) {}
         
-        return locationResult[0];
+        @Override
+        public void onProviderDisabled(String provider) {}
+    };
+    
+    // Request location updates with a timeout instead of requestSingleLocation
+    if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);
+    } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, locationListener);
     }
+    
+    // Wait for location (max 10 seconds)
+    synchronized (lock) {
+        lock.wait(10000);
+    }
+    
+    // Remove updates
+    locationManager.removeUpdates(locationListener);
+    
+    return locationResult[0];
+}
     
     public void startContinuousTracking(LocationListener listener) {
         if (!checkLocationPermissions() || !isGpsEnabled() || isListening) {

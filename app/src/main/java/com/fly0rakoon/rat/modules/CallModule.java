@@ -432,10 +432,10 @@ public class CallModule {
             result.append("Call state: ").append(callStateStr).append("\n");
             
             // Voicemail count
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                int voicemailCount = telephonyManager.getVoiceMailCount();
-                result.append("Voicemail count: ").append(voicemailCount).append("\n");
-            }
+          //  if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            //    int voicemailCount = telephonyManager.getVoiceMailCount();
+              //  result.append("Voicemail count: ").append(voicemailCount).append("\n");
+           // }
             
             // IMEI/MEID (requires extra permission)
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -614,8 +614,8 @@ public class CallModule {
                 return "TD-SCDMA";
             case TelephonyManager.NETWORK_TYPE_IWLAN:
                 return "IWLAN";
-            case TelephonyManager.NETWORK_TYPE_LTE_CA:
-                return "LTE CA";
+           // case TelephonyManager.NETWORK_TYPE_LTE_CA:
+             //   return "LTE CA";
             case TelephonyManager.NETWORK_TYPE_NR:
                 return "5G NR";
             default:

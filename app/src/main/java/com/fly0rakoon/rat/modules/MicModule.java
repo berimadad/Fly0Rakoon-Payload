@@ -84,7 +84,7 @@ public class MicModule {
             mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
             mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
             mediaRecorder.setAudioSamplingRate(SAMPLE_RATE);
-            mediaRecorder.setAudioBitRate(128000);
+           
             mediaRecorder.setOutputFile(outputFile.getAbsolutePath());
             
             mediaRecorder.prepare();
