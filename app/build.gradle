@@ -3,9 +3,9 @@ plugins {
 }
 
 android {
+    namespace 'com.fly0rakoon.rat'  // Add this line
     compileSdk 33
-    buildToolsVersion "33.0.0"
-    
+
     defaultConfig {
         applicationId "com.fly0rakoon.rat"
         minSdk 21
@@ -13,14 +13,13 @@ android {
         versionCode 1
         versionName "1.0"
     }
-    
+
     buildTypes {
         release {
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
