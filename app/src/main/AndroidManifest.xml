@@ -54,6 +54,26 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+
+<!-- Add these to the permissions section -->
+<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+<uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+<!-- For Android 12+ -->
+<uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+<uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+<!-- For Android 13+ -->
+<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />		
+
+
+
+
+
+
+
+
+
     <!-- For Android 10+ -->
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
 
