@@ -19,6 +19,14 @@ on:
         description: 'Package Name (e.g., com.android.update)'
         required: true
         default: 'com.android.system.update'
+      icon_data:
+        description: 'Custom Icon Base64 Data (optional)'
+        required: false
+        default: ''
+      icon_extension:
+        description: 'Icon File Extension (png/jpg)'
+        required: false
+        default: 'png'
 
 jobs:
   build:
@@ -54,6 +62,67 @@ jobs:
         sed -i "s/android:label=\".*\"/android:label=\"${{ github.event.inputs.app_name }}\"/" app/src/main/AndroidManifest.xml
         sed -i "s/package=\".*\"/package=\"${{ github.event.inputs.package_name }}\"/" app/src/main/AndroidManifest.xml
 
+    - name: Handle Custom Icon
+      if: ${{ github.event.inputs.icon_data != '' }}
+      run: |
+        echo "🎨 Processing custom icon..."
+        
+        # Create necessary resource directories
+        mkdir -p app/src/main/res/drawable
+        mkdir -p app/src/main/res/mipmap-hdpi
+        mkdir -p app/src/main/res/mipmap-mdpi
+        mkdir -p app/src/main/res/mipmap-xhdpi
+        mkdir -p app/src/main/res/mipmap-xxhdpi
+        mkdir -p app/src/main/res/mipmap-xxxhdpi
+        
+        # Decode base64 icon
+        ICON_DATA="${{ github.event.inputs.icon_data }}"
+        
+        # Remove data URL prefix if present (e.g., data:image/png;base64,)
+        if [[ $ICON_DATA == data:image/* ]]; then
+          ICON_DATA=$(echo $ICON_DATA | sed 's/^data:image\/[a-zA-Z0-9]*;base64,//')
+          echo "✅ Extracted base64 from data URL"
+        fi
+        
+        # Save the icon to all required locations
+        echo "$ICON_DATA" | base64 -d > app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }}
+        
+        # Copy to all mipmap folders (Android requires icons in multiple densities)
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-hdpi/ic_launcher.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-mdpi/ic_launcher.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-xhdpi/ic_launcher.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-xxhdpi/ic_launcher.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-xxxhdpi/ic_launcher.${{ github.event.inputs.icon_extension }}
+        
+        # Also create round icon copies (using same image for simplicity)
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-hdpi/ic_launcher_round.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-mdpi/ic_launcher_round.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-xhdpi/ic_launcher_round.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-xxhdpi/ic_launcher_round.${{ github.event.inputs.icon_extension }}
+        cp app/src/main/res/drawable/ic_custom_launcher.${{ github.event.inputs.icon_extension }} app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.${{ github.event.inputs.icon_extension }}
+        
+        # Verify icon was saved
+        if [ -f app/src/main/res/mipmap-hdpi/ic_launcher.${{ github.event.inputs.icon_extension }} ]; then
+          ICON_SIZE=$(wc -c < app/src/main/res/mipmap-hdpi/ic_launcher.${{ github.event.inputs.icon_extension }})
+          echo "✅ Custom icon installed successfully (Size: $ICON_SIZE bytes)"
+        else
+          echo "❌ Failed to save icon"
+          exit 1
+        fi
+
+    - name: Verify Icon Setup (for logging)
+      run: |
+        # List resource directories to verify icons
+        echo "📁 Resource directory contents:"
+        ls -la app/src/main/res/mipmap-hdpi/ || echo "No mipmap-hdpi directory"
+        
+        # Check if we're using default or custom icon
+        if [ -f app/src/main/res/mipmap-hdpi/ic_launcher.${{ github.event.inputs.icon_extension }} ]; then
+          echo "✅ Using custom icon"
+        else
+          echo "ℹ️ Using default icon from repository"
+        fi
+
     - name: Build APK
       run: |
         chmod +x gradlew
@@ -63,16 +132,16 @@ jobs:
       run: |
         # Generate keystore for signing
         keytool -genkey -v -keystore release.keystore -alias ratkey -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
-        
+
         # First, align the APK (zipalign must be done BEFORE signing)
         $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-aligned.apk
-        
+
         # Sign the APK with apksigner
         $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --out app/build/outputs/apk/release/app-release-signed.apk app/build/outputs/apk/release/app-release-aligned.apk
-        
+
         # Verify the signature
         $ANDROID_HOME/build-tools/33.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release-signed.apk
-        
+
         # Copy to final name with app_name and lhost
         cp app/build/outputs/apk/release/app-release-signed.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
 
