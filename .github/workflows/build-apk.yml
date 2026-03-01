@@ -62,6 +62,7 @@ jobs:
         sed -i "s/android:label=\".*\"/android:label=\"${{ github.event.inputs.app_name }}\"/" app/src/main/AndroidManifest.xml
         sed -i "s/package=\".*\"/package=\"${{ github.event.inputs.package_name }}\"/" app/src/main/AndroidManifest.xml
 
+    # 👇 INSERT THE CUSTOM ICON STEP HERE 👇
     - name: Handle Custom Icon
       if: ${{ github.event.inputs.icon_data != '' }}
       run: |
@@ -84,82 +85,96 @@ jobs:
           echo "✅ Extracted base64 from data URL"
         fi
         
-        # Save as PNG (Android expects PNG for launcher icons)
-        # Convert to PNG if it's a different format
-        echo "$ICON_DATA" | base64 -d > /tmp/custom_icon.${{ github.event.inputs.icon_extension }}
+        # Save raw decoded data to temp file
+        echo "$ICON_DATA" | base64 -d > /tmp/raw_icon.dat
         
-        # Use ImageMagick to convert to PNG if needed (install if not present)
-        if command -v convert &> /dev/null; then
-          echo "🖼️ Converting icon to PNG format..."
-          convert /tmp/custom_icon.${{ github.event.inputs.icon_extension }} /tmp/custom_icon.png
-        else
-          # If ImageMagick not available, just use the original format
-          cp /tmp/custom_icon.${{ github.event.inputs.icon_extension }} /tmp/custom_icon.png
+        # Check file size and type
+        RAW_SIZE=$(wc -c < /tmp/raw_icon.dat)
+        echo "📊 Raw decoded size: $RAW_SIZE bytes"
+        
+        # Verify it's actually an image using file command
+        if command -v file &> /dev/null; then
+          FILE_TYPE=$(file -b /tmp/raw_icon.dat)
+          echo "🔍 Detected file type: $FILE_TYPE"
+          
+          # Check if it's a valid image
+          if [[ $FILE_TYPE == *PNG* ]] || [[ $FILE_TYPE == *JPEG* ]] || [[ $FILE_TYPE == *GIF* ]] || [[ $FILE_TYPE == *BMP* ]]; then
+            echo "✅ Valid image format detected"
+          else
+            echo "⚠️ Unrecognized image format, but continuing..."
+          fi
         fi
         
-        # Save to drawable as PNG
-        cp /tmp/custom_icon.png app/src/main/res/drawable/ic_launcher.png
-        
-        # Copy to all mipmap folders (Android requires icons in multiple densities)
-        # For simplicity, we use the same image for all densities
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-        
-        # Also create round icon copies
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-        cp /tmp/custom_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-        
-        # Clean up temp files
-        rm -f /tmp/custom_icon.*
-        
-        # Verify icon was saved
-        if [ -f app/src/main/res/mipmap-hdpi/ic_launcher.png ]; then
-          ICON_SIZE=$(wc -c < app/src/main/res/mipmap-hdpi/ic_launcher.png)
-          echo "✅ Custom icon installed successfully (Size: $ICON_SIZE bytes)"
-          
-          # Verify AndroidManifest.xml has correct icon references
-          if grep -q "android:icon=\"@mipmap/ic_launcher\"" app/src/main/AndroidManifest.xml; then
-            echo "✅ AndroidManifest.xml already has correct icon references"
+        # Try to convert to proper PNG using different methods
+        # Method 1: Use ImageMagick if available
+        if command -v convert &> /dev/null; then
+          echo "🖼️ Using ImageMagick to convert to PNG..."
+          convert /tmp/raw_icon.dat -resize 192x192 /tmp/icon_converted.png
+          if [ $? -eq 0 ]; then
+            echo "✅ ImageMagick conversion successful"
+            cp /tmp/icon_converted.png /tmp/final_icon.png
           else
-            echo "⚠️ Adding icon references to AndroidManifest.xml"
-            # Add icon references if missing
-            sed -i 's|<application|& android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"|' app/src/main/AndroidManifest.xml
+            echo "⚠️ ImageMagick conversion failed, trying fallback"
+            cp /tmp/raw_icon.dat /tmp/final_icon.png
           fi
         else
-          echo "❌ Failed to save icon"
+          # Method 2: Just use the raw data
+          echo "📦 Using raw image data (ImageMagick not available)"
+          cp /tmp/raw_icon.dat /tmp/final_icon.png
+        fi
+        
+        # Verify the final PNG file
+        if [ -f /tmp/final_icon.png ]; then
+          FINAL_SIZE=$(wc -c < /tmp/final_icon.png)
+          echo "📊 Final icon size: $FINAL_SIZE bytes"
+          
+          # Check if it's a valid PNG by looking for PNG header
+          if hexdump -n 8 -C /tmp/final_icon.png 2>/dev/null | grep -q "PNG"; then
+            echo "✅ Valid PNG header detected"
+          else
+            echo "⚠️ PNG header not found, but continuing..."
+            # Show first few bytes for debugging
+            echo "🔍 First 16 bytes of icon:"
+            hexdump -n 16 -C /tmp/final_icon.png 2>/dev/null || echo "  Unable to read file"
+          fi
+        else
+          echo "❌ Failed to create icon file"
           exit 1
         fi
-
-    - name: Ensure Default Icons (if no custom icon)
-      if: ${{ github.event.inputs.icon_data == '' }}
-      run: |
-        echo "📱 Using default app icon from repository"
-        # Verify default icons exist
-        if [ ! -f app/src/main/res/mipmap-hdpi/ic_launcher.png ]; then
-          echo "⚠️ Default icons missing, but build may still work"
-        fi
-
-    - name: Verify Icon Setup
-      run: |
-        echo "📁 Resource directory contents:"
-        ls -la app/src/main/res/mipmap-hdpi/ || echo "No mipmap-hdpi directory"
         
-        # Check which icon is being used
-        if [ -f app/src/main/res/mipmap-hdpi/ic_launcher.png ]; then
-          ICON_SIZE=$(wc -c < app/src/main/res/mipmap-hdpi/ic_launcher.png 2>/dev/null || echo "0")
-          echo "✅ Icon file present (Size: $ICON_SIZE bytes)"
-          
-          # Show first few bytes to verify it's an image
-          echo "🔍 Icon file type:"
-          file app/src/main/res/mipmap-hdpi/ic_launcher.png || echo "  Unable to determine file type"
+        # Copy to all resource directories
+        echo "📁 Copying icon to resource directories..."
+        
+        # Copy to drawable
+        cp /tmp/final_icon.png app/src/main/res/drawable/ic_launcher.png
+        
+        # Copy to all mipmap folders
+        cp /tmp/final_icon.png app/src/main/res/mipmap-hdpi/ic_launcher.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-mdpi/ic_launcher.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+        
+        # Copy round icons
+        cp /tmp/final_icon.png app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-mdpi/ic_launcher_round.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+        cp /tmp/final_icon.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
+        
+        # Clean up temp files
+        rm -f /tmp/raw_icon.dat /tmp/icon_converted.png /tmp/final_icon.png
+        
+        # Final verification
+        echo "✅ Icon files installed:"
+        ls -la app/src/main/res/mipmap-hdpi/ic_launcher.png
+        
+        # Verify AndroidManifest.xml has correct icon references
+        if grep -q "android:icon=\"@mipmap/ic_launcher\"" app/src/main/AndroidManifest.xml; then
+          echo "✅ AndroidManifest.xml has correct icon references"
         else
-          echo "⚠️ No icon file found in mipmap-hdpi"
+          echo "⚠️ Adding icon references to AndroidManifest.xml"
+          sed -i 's|<application|& android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"|' app/src/main/AndroidManifest.xml
         fi
 
     - name: Build APK
@@ -172,16 +187,16 @@ jobs:
         # Generate keystore for signing
         keytool -genkey -v -keystore release.keystore -alias ratkey -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
 
-        # Align the APK
+        # First, align the APK (zipalign must be done BEFORE signing)
         $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-aligned.apk
 
-        # Sign the APK
+        # Sign the APK with apksigner
         $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --out app/build/outputs/apk/release/app-release-signed.apk app/build/outputs/apk/release/app-release-aligned.apk
 
         # Verify the signature
         $ANDROID_HOME/build-tools/33.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release-signed.apk
 
-        # Copy to final name
+        # Copy to final name with app_name and lhost
         cp app/build/outputs/apk/release/app-release-signed.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
 
     - name: Upload APK Artifact
