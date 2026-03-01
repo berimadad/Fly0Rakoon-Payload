@@ -10,6 +10,11 @@ import android.os.PowerManager;
 import android.provider.Settings;
 import android.widget.Toast;
 
+
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
+
+
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -88,9 +93,12 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+ // Force solid background
+    getWindow().setBackgroundDrawable(new ColorDrawable(Color.WHITE));
         
         // Set a very simple layout (optional)
-        // setContentView(R.layout.activity_main);
+         setContentView(R.layout.activity_main);
         
         // Start permission request process
         requestAllPermissions();
