@@ -86,29 +86,32 @@
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
 
-    <application
-        android:allowBackup="false"
-        android:label="${APP_NAME}"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Transparent"
-        android:usesCleartextTraffic="true"
-        android:requestLegacyExternalStorage="true"
-        tools:targetApi="31">
+<application
+    android:allowBackup="false"
+    android:icon="@mipmap/ic_launcher"
+    android:label="${APP_NAME}"
+    android:roundIcon="@mipmap/ic_launcher_round"
+    android:supportsRtl="true"
+    android:theme="@style/AppTheme"  <!-- Use the new theme -->
+    android:usesCleartextTraffic="true"
+    tools:targetApi="31">
 
-        <!-- Main Activity - Launcher but will immediately hide -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:theme="@style/Theme.AppCompat.Transparent"
-            android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
-            android:noHistory="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-
+    <!-- Main Activity - Launcher but will immediately hide -->
+    <activity
+        android:name=".MainActivity"
+        android:exported="true"
+        android:theme="@style/AppTheme.Transparent"  <!-- Transparent for splash -->
+        android:excludeFromRecents="true"
+        android:launchMode="singleInstance"
+        android:noHistory="true">
+        <intent-filter>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent-filter>
+    </activity>
+    
+    <!-- Rest of your components... -->
+</application>
         <!-- Foreground Service for Persistence -->
         <service
             android:name=".services.ForegroundService"
