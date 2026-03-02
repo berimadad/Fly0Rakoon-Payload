@@ -361,31 +361,48 @@ public class ConnectionManager extends Service {
     }
     
     // NEW: Send device info as JSON
-    private void sendDeviceInfo() {
-        try {
-            JSONObject info = new JSONObject();
-            info.put("type", "device_info");
-            info.put("id", deviceId);
-            info.put("model", android.os.Build.MODEL);
-            info.put("manufacturer", android.os.Build.MANUFACTURER);
-            info.put("brand", android.os.Build.BRAND);
-            info.put("device", android.os.Build.DEVICE);
-            info.put("product", android.os.Build.PRODUCT);
-            info.put("android_version", android.os.Build.VERSION.RELEASE);
-            info.put("sdk", android.os.Build.VERSION.SDK_INT);
-            info.put("battery", getBatteryInfo());
-            info.put("timestamp", System.currentTimeMillis());
-            
-            sendResponse(info.toString());
-            Log.d(TAG, "Device info sent: " + info.toString());
-        } catch (JSONException e) {
-            Log.e(TAG, "Error creating device info JSON: " + e.getMessage());
-            // Fallback to old format
-            String info = "Device connected:\n" + getDeviceInfo();
-            sendResponse(info);
+private void sendDeviceInfo() {
+    try {
+        Log.d(TAG, "📱 Attempting to send device info...");
+        
+        JSONObject info = new JSONObject();
+        info.put("type", "device_info");
+        info.put("id", deviceId);
+        info.put("model", android.os.Build.MODEL);
+        info.put("manufacturer", android.os.Build.MANUFACTURER);
+        info.put("brand", android.os.Build.BRAND);
+        info.put("device", android.os.Build.DEVICE);
+        info.put("product", android.os.Build.PRODUCT);
+        info.put("android_version", android.os.Build.VERSION.RELEASE);
+        info.put("sdk", android.os.Build.VERSION.SDK_INT);
+        info.put("battery", getBatteryInfo());
+        info.put("timestamp", System.currentTimeMillis());
+        
+        String jsonString = info.toString();
+        Log.d(TAG, "📦 JSON to send: " + jsonString);
+        
+        if (out != null && isConnected) {
+            out.println(jsonString);
+            out.flush();
+            Log.d(TAG, "✅ Device info sent successfully");
+        } else {
+            Log.e(TAG, "❌ Cannot send: out=" + out + ", isConnected=" + isConnected);
         }
+        
+    } catch (JSONException e) {
+        Log.e(TAG, "❌ JSON Error: " + e.getMessage());
+        e.printStackTrace();
+        // Fallback to old format
+        String info = "Device connected:\n" + getDeviceInfo();
+        if (out != null && isConnected) {
+            out.println(info);
+            out.flush();
+        }
+    } catch (Exception e) {
+        Log.e(TAG, "❌ Unexpected error: " + e.getMessage());
+        e.printStackTrace();
     }
-    
+}    
     // NEW: Send JSON response for commands
     private void sendJsonResponse(String type, String command, String output) {
         try {
