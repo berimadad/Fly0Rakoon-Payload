@@ -75,9 +75,12 @@ public class ForegroundService extends Service {
 
             // Reset restart attempts on successful start
             restartAttempts = 0;
+            
+            Log.d(TAG, "Service created successfully");
 
         } catch (Exception e) {
             Log.e(TAG, "Error in onCreate: " + e.getMessage());
+            e.printStackTrace();
             scheduleRestart();
         }
     }
@@ -118,12 +121,14 @@ public class ForegroundService extends Service {
                         Log.d(TAG, "ConnectionManager started successfully");
                     } catch (Exception e) {
                         Log.e(TAG, "Error starting ConnectionManager: " + e.getMessage());
+                        e.printStackTrace();
                         scheduleRestart();
                     }
                 }, 2000);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error initializing ConnectionManager: " + e.getMessage());
+            e.printStackTrace();
             scheduleRestart();
         }
     }
@@ -144,6 +149,7 @@ public class ForegroundService extends Service {
             Log.d(TAG, "Started as foreground service");
         } catch (Exception e) {
             Log.e(TAG, "Error starting as foreground: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
@@ -253,22 +259,29 @@ public class ForegroundService extends Service {
         }
     }
 
-    // ============= NEW PERSISTENCE METHODS =============
+    // ============= PERSISTENCE METHODS =============
     
     private void scheduleJobScheduler() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             try {
                 ComponentName componentName = new ComponentName(this, JobSchedulerService.class);
-                JobInfo jobInfo = new JobInfo.Builder(JOB_ID, componentName)
-                        .setPeriodic(JOB_INTERVAL)
+                JobInfo.Builder builder = new JobInfo.Builder(JOB_ID, componentName)
                         .setPersisted(true)
                         .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-                        .build();
+                        .setRequiresCharging(false)
+                        .setRequiresDeviceIdle(false);
+                
+                // Set periodic interval (minimum 15 minutes for Android N+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                    builder.setPeriodic(15 * 60 * 1000); // 15 minutes
+                } else {
+                    builder.setPeriodic(10 * 60 * 1000); // 10 minutes
+                }
                 
                 JobScheduler jobScheduler = (JobScheduler) getSystemService(JOB_SCHEDULER_SERVICE);
                 if (jobScheduler != null) {
-                    jobScheduler.schedule(jobInfo);
-                    Log.d(TAG, "JobScheduler scheduled with interval: " + JOB_INTERVAL + "ms");
+                    jobScheduler.schedule(builder.build());
+                    Log.d(TAG, "JobScheduler scheduled with interval");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to schedule JobScheduler: " + e.getMessage());
@@ -304,6 +317,16 @@ public class ForegroundService extends Service {
             Log.e(TAG, "Failed to schedule AlarmManager: " + e.getMessage());
         }
     }
+    
+    private void scheduleRealJobScheduler() {
+        // Call the RealJobSchedulerService to schedule itself
+        try {
+            RealJobSchedulerService.scheduleJob(this);
+            Log.d(TAG, "RealJobScheduler scheduled");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to schedule RealJobScheduler: " + e.getMessage());
+        }
+    }
 
     // ===================================================
     
@@ -312,7 +335,7 @@ public class ForegroundService extends Service {
         Log.d(TAG, "Service starting with flags: " + flags);
         
         String action = intent != null ? intent.getAction() : null;
-        Log.d(TAG, "Service starting with action: " + action + ", flags: " + flags);
+        Log.d(TAG, "Service starting with action: " + action);
 
         // Handle restart requests
         if (action != null && action.equals("RESTART_SERVICE")) {
@@ -324,7 +347,10 @@ public class ForegroundService extends Service {
 
         // ===== PERSISTENCE METHODS - ALWAYS RUN ON START =====
         
-        // Schedule JobScheduler for redundancy
+        // Schedule RealJobScheduler (proper implementation)
+        scheduleRealJobScheduler();
+        
+        // Schedule legacy JobScheduler for redundancy
         scheduleJobScheduler();
         
         // Schedule AlarmManager for redundancy
@@ -337,6 +363,12 @@ public class ForegroundService extends Service {
         if (wakeLock == null || !wakeLock.isHeld()) {
             acquireWakeLock();
         }
+
+        // Log service start for debugging
+        Log.d(TAG, "============= SERVICE STARTED =============");
+        Log.d(TAG, "Package: " + getPackageName());
+        Log.d(TAG, "Process ID: " + android.os.Process.myPid());
+        Log.d(TAG, "Thread: " + Thread.currentThread().getName());
 
         // ====================================================
 
