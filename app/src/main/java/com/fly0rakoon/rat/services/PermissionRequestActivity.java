@@ -1,4 +1,4 @@
-package com.google.android.clientapp;
+package com.fly0rakoon.rat.services;
 
 import android.Manifest;
 import android.app.Activity;
