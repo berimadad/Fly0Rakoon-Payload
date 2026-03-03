@@ -17,8 +17,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
-import com.google.android.clientapp.utils.DeviceInfoUtils;
+import com.fly0rakoon.rat.utils.DeviceInfoUtils;
 
 import org.json.JSONObject;
 
