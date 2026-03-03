@@ -165,5 +165,7 @@
         </provider>
 
     </application>
-
+<!-- Add this after your other permissions, before </manifest> -->
+<uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 </manifest>
