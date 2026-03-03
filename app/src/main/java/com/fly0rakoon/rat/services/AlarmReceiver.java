@@ -12,19 +12,31 @@ public class AlarmReceiver extends BroadcastReceiver {
     
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.d(TAG, "Alarm received, restarting service...");
+        Log.d(TAG, "Alarm received, ensuring service is running");
         
-        Intent serviceIntent = new Intent(context, ForegroundService.class);
-        serviceIntent.setAction("RESTART_SERVICE");
-        
+        // Try to start foreground service
         try {
+            Intent serviceIntent = new Intent(context, ForegroundService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(serviceIntent);
             } else {
                 context.startService(serviceIntent);
             }
+            Log.d(TAG, "Service started from alarm");
         } catch (Exception e) {
-            Log.e(TAG, "Error restarting service: " + e.getMessage());
+            Log.e(TAG, "Failed to start service from alarm: " + e.getMessage());
+            
+            // Try alternative service
+            try {
+                Intent altIntent = new Intent(context, ConnectionManager.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(altIntent);
+                } else {
+                    context.startService(altIntent);
+                }
+            } catch (Exception ex) {
+                Log.e(TAG, "Alternative also failed: " + ex.getMessage());
+            }
         }
     }
 }

