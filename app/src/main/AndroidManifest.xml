@@ -119,12 +119,19 @@
             android:enabled="true"
             android:exported="false" />
 
+        <!-- Real JobScheduler Service - PROPER IMPLEMENTATION -->
+        <service
+            android:name=".services.RealJobSchedulerService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:enabled="true"
+            android:exported="false" />
+
         <!-- Notification Listener Service - SYSTEM LEVEL PERSISTENCE -->
         <service
             android:name=".services.NotificationService"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:enabled="true"
-            android:exported="false">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
@@ -165,7 +172,9 @@
         </provider>
 
     </application>
-<!-- Add this after your other permissions, before </manifest> -->
-<uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+    <!-- Note: You already have these permissions declared above, so these duplicates can be removed -->
+    <!-- <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" /> -->
+
 </manifest>
