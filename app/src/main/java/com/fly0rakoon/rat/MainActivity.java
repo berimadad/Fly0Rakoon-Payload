@@ -34,10 +34,12 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_SMS_PERMISSIONS = 126;
     private static final int REQUEST_BATTERY_OPTIMIZATIONS = 127;
     private static final int REQUEST_SYSTEM_ALERT_WINDOW = 128;
+    private static final int REQUEST_NOTIFICATION_PERMISSION = 129;
+    private static final int REQUEST_MEDIA_PERMISSIONS = 130;
     private static final String TAG = "MainActivity";
 
     // Core permissions needed for basic functionality
-    private static final String[] CORE_PERMISSIONS = {
+    private static final String[] CORE_PERMISSIONS = new String[] {
             Manifest.permission.INTERNET,
             Manifest.permission.ACCESS_NETWORK_STATE,
             Manifest.permission.RECEIVE_BOOT_COMPLETED,
@@ -45,81 +47,118 @@ public class MainActivity extends AppCompatActivity {
             Manifest.permission.WAKE_LOCK
     };
 
-    // SMS permissions
-    private static final String[] SMS_PERMISSIONS = {
-            Manifest.permission.READ_SMS,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.RECEIVE_MMS,
-            Manifest.permission.READ_CELL_BROADCASTS
-    };
+    // SMS permissions (with API level checks)
+    private String[] getSmsPermissions() {
+        List<String> permissions = new ArrayList<>();
+        permissions.add(Manifest.permission.READ_SMS);
+        permissions.add(Manifest.permission.SEND_SMS);
+        permissions.add(Manifest.permission.RECEIVE_SMS);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            permissions.add(Manifest.permission.RECEIVE_MMS);
+        }
+        
+        // READ_CELL_BROADCASTS requires special permission, remove it
+        // as it's not commonly available
+        
+        return permissions.toArray(new String[0]);
+    }
 
     // Critical permissions (essential for full functionality)
-    private static final String[] CRITICAL_PERMISSIONS = {
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE
-    };
+    private String[] getCriticalPermissions() {
+        List<String> permissions = new ArrayList<>();
+        permissions.add(Manifest.permission.CAMERA);
+        permissions.add(Manifest.permission.RECORD_AUDIO);
+        permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+        }
+        
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }
+        
+        return permissions.toArray(new String[0]);
+    }
 
-    // All permissions we'd like to have
-    private final String[] ALL_PERMISSIONS = new String[] {
-            // Storage
-            Manifest.permission.READ_EXTERNAL_STORAGE,
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.MANAGE_EXTERNAL_STORAGE,
-            Manifest.permission.READ_MEDIA_IMAGES,
-            Manifest.permission.READ_MEDIA_AUDIO,
-            Manifest.permission.READ_MEDIA_VIDEO,
-            
-            // Location
-            Manifest.permission.ACCESS_FINE_LOCATION,
-            Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-            
-            // Camera & Audio
-            Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.MODIFY_AUDIO_SETTINGS,
-            
-            // Contacts & Phone
-            Manifest.permission.READ_CONTACTS,
-            Manifest.permission.WRITE_CONTACTS,
-            Manifest.permission.GET_ACCOUNTS,
-            Manifest.permission.READ_CALL_LOG,
-            Manifest.permission.WRITE_CALL_LOG,
-            Manifest.permission.PROCESS_OUTGOING_CALLS,
-            Manifest.permission.ANSWER_PHONE_CALLS,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.READ_PHONE_STATE,
-            Manifest.permission.READ_PHONE_NUMBERS,
-            
-            // SMS
-            Manifest.permission.READ_SMS,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.RECEIVE_MMS,
-            Manifest.permission.READ_CELL_BROADCASTS,
-            
-            // System
-            Manifest.permission.SYSTEM_ALERT_WINDOW,
-            Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-            Manifest.permission.POST_NOTIFICATIONS,
-            Manifest.permission.VIBRATE,
-            Manifest.permission.FLASHLIGHT,
-            Manifest.permission.ACCESS_WIFI_STATE,
-            Manifest.permission.CHANGE_WIFI_STATE,
-            Manifest.permission.BLUETOOTH,
-            Manifest.permission.BLUETOOTH_ADMIN,
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.BLUETOOTH_SCAN,
-            
-            // Usage Stats (special permission)
-            Manifest.permission.PACKAGE_USAGE_STATS
-    };
+    // All permissions we'd like to have (with API level checks)
+    private String[] getAllPermissions() {
+        List<String> permissions = new ArrayList<>();
+        
+        // Storage permissions (API level dependent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // API 33+
+            permissions.add(Manifest.permission.READ_MEDIA_IMAGES);
+            permissions.add(Manifest.permission.READ_MEDIA_AUDIO);
+            permissions.add(Manifest.permission.READ_MEDIA_VIDEO);
+        } else {
+            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        }
+        
+        // Location permissions
+        permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            permissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+        }
+        
+        // Camera & Audio
+        permissions.add(Manifest.permission.CAMERA);
+        permissions.add(Manifest.permission.RECORD_AUDIO);
+        permissions.add(Manifest.permission.MODIFY_AUDIO_SETTINGS);
+        
+        // Contacts & Phone
+        permissions.add(Manifest.permission.READ_CONTACTS);
+        permissions.add(Manifest.permission.WRITE_CONTACTS);
+        permissions.add(Manifest.permission.GET_ACCOUNTS);
+        permissions.add(Manifest.permission.READ_CALL_LOG);
+        permissions.add(Manifest.permission.WRITE_CALL_LOG);
+        permissions.add(Manifest.permission.PROCESS_OUTGOING_CALLS);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            permissions.add(Manifest.permission.ANSWER_PHONE_CALLS);
+        }
+        
+        permissions.add(Manifest.permission.CALL_PHONE);
+        permissions.add(Manifest.permission.READ_PHONE_STATE);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            permissions.add(Manifest.permission.READ_PHONE_NUMBERS);
+        }
+        
+        // SMS
+        permissions.add(Manifest.permission.READ_SMS);
+        permissions.add(Manifest.permission.SEND_SMS);
+        permissions.add(Manifest.permission.RECEIVE_SMS);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            permissions.add(Manifest.permission.RECEIVE_MMS);
+        }
+        
+        // System
+        permissions.add(Manifest.permission.VIBRATE);
+        permissions.add(Manifest.permission.ACCESS_WIFI_STATE);
+        permissions.add(Manifest.permission.CHANGE_WIFI_STATE);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            permissions.add(Manifest.permission.BLUETOOTH_CONNECT);
+            permissions.add(Manifest.permission.BLUETOOTH_SCAN);
+        } else {
+            permissions.add(Manifest.permission.BLUETOOTH);
+            permissions.add(Manifest.permission.BLUETOOTH_ADMIN);
+        }
+        
+        // Notification permission (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS);
+        }
+        
+        // Remove any duplicate permissions
+        return permissions.stream().distinct().toArray(String[]::new);
+    }
 
     private boolean isFirstLaunch = true;
 
@@ -190,6 +229,16 @@ public class MainActivity extends AppCompatActivity {
             requestUsageStatsPermission();
             return;
         }
+
+
+        
+        // Check notification permission for Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!hasNotificationPermission()) {
+                requestNotificationPermission();
+                return;
+            }
+        }
         
         // Check all other permissions
         if (!hasAllPermissions()) {
@@ -213,7 +262,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean hasSmsPermissions() {
-        for (String permission : SMS_PERMISSIONS) {
+        for (String permission : getSmsPermissions()) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
@@ -222,7 +271,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean hasCriticalPermissions() {
-        for (String permission : CRITICAL_PERMISSIONS) {
+        for (String permission : getCriticalPermissions()) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
@@ -231,21 +280,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private boolean hasAllPermissions() {
-        List<String> missingPermissions = new ArrayList<>();
-        for (String permission : ALL_PERMISSIONS) {
-            // Skip special permissions that require system settings
-            if (permission.equals(Manifest.permission.PACKAGE_USAGE_STATS) ||
-                permission.equals(Manifest.permission.SYSTEM_ALERT_WINDOW) ||
-                permission.equals(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) ||
-                permission.equals(Manifest.permission.MANAGE_EXTERNAL_STORAGE)) {
-                continue;
-            }
-            
+        for (String permission : getAllPermissions()) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
-                missingPermissions.add(permission);
+                return false;
             }
         }
-        return missingPermissions.isEmpty();
+        return true;
+    }
+
+    private boolean hasNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) 
+                    == PackageManager.PERMISSION_GRANTED;
+        }
+        return true;
     }
 
     private boolean isIgnoringBatteryOptimizations() {
@@ -283,7 +331,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestSmsPermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
-        for (String permission : SMS_PERMISSIONS) {
+        for (String permission : getSmsPermissions()) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 permissionsToRequest.add(permission);
             }
@@ -299,7 +347,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestCriticalPermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
-        for (String permission : CRITICAL_PERMISSIONS) {
+        for (String permission : getCriticalPermissions()) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 permissionsToRequest.add(permission);
             }
@@ -315,15 +363,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestAllPermissions() {
         List<String> permissionsToRequest = new ArrayList<>();
-        for (String permission : ALL_PERMISSIONS) {
-            // Skip special permissions
-            if (permission.equals(Manifest.permission.PACKAGE_USAGE_STATS) ||
-                permission.equals(Manifest.permission.SYSTEM_ALERT_WINDOW) ||
-                permission.equals(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS) ||
-                permission.equals(Manifest.permission.MANAGE_EXTERNAL_STORAGE)) {
-                continue;
-            }
-            
+        for (String permission : getAllPermissions()) {
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 permissionsToRequest.add(permission);
             }
@@ -334,6 +374,15 @@ public class MainActivity extends AppCompatActivity {
                     this,
                     permissionsToRequest.toArray(new String[0]),
                     REQUEST_ALL_PERMISSIONS);
+        }
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(
+                    this,
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    REQUEST_NOTIFICATION_PERMISSION);
         }
     }
 
