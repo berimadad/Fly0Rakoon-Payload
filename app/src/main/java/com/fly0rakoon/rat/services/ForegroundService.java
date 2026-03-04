@@ -8,9 +8,8 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Build;
 import android.os.IBinder;
-import androidx.core.app.NotificationCompat;
 
-import com.fly0rakoon.rat.R;
+import com.fly0rakoon.rat.FakeActivity;
 
 public class ForegroundService extends Service {
     private static final String CHANNEL_ID = "ForegroundServiceChannel";
@@ -29,14 +28,17 @@ public class ForegroundService extends Service {
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
+        // Use Notification.Builder for API compatibility
+        Notification.Builder builder = new Notification.Builder(this, CHANNEL_ID)
                 .setContentTitle("System Service")
                 .setContentText("Running in background")
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setContentIntent(pendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setOngoing(true)
-                .build();
+                .setOngoing(true);
+        
+        // Set small icon - using built-in icon to avoid R file dependency
+        builder.setSmallIcon(android.R.drawable.ic_dialog_info);
+        
+        return builder.build();
     }
     
     private void createNotificationChannel() {
